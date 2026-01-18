@@ -1,0 +1,169 @@
+{
+  "version": "1.0",
+  "name": "Login Screen",
+  "description": "Example login screen design",
+  "tokens": {
+    "color.primary": "#2E6BE6",
+    "color.secondary": "#6B7280",
+    "color.background": "#FFFFFF",
+    "color.surface": "#F3F4F6",
+    "color.text": "#1F2937",
+    "color.textMuted": "#6B7280",
+    "color.error": "#EF4444",
+    "font.body": "Inter, sans-serif",
+    "space.sm": 8,
+    "space.md": 16,
+    "space.lg": 24,
+    "space.xl": 32,
+    "radius.sm": 4,
+    "radius.md": 8
+  },
+  "components": {},
+  "screens": {
+    "login": {
+      "id": "login",
+      "name": "Login Screen",
+      "description": "User authentication screen",
+      "root": {
+        "id": "root",
+        "type": "Container",
+        "name": "Login Container",
+        "layout": {
+          "mode": "absolute",
+          "x": 0,
+          "y": 0,
+          "w": 375,
+          "h": 667
+        },
+        "style": {
+          "background": "color.background"
+        },
+        "meta": {
+          "purpose": "Main container for login screen",
+          "behavior": "Centers content vertically"
+        },
+        "children": [
+          {
+            "id": "header",
+            "type": "Text",
+            "name": "Title",
+            "layout": {
+              "mode": "absolute",
+              "x": 50,
+              "y": 100,
+              "w": 275,
+              "h": 40
+            },
+            "style": {
+              "textColor": "color.text"
+            },
+            "content": {
+              "text": "Welcome Back"
+            },
+            "meta": {
+              "purpose": "Login screen title"
+            }
+          },
+          {
+            "id": "email_input",
+            "type": "Input",
+            "name": "Email Input",
+            "layout": {
+              "mode": "absolute",
+              "x": 50,
+              "y": 180,
+              "w": 275,
+              "h": 44
+            },
+            "style": {
+              "background": "color.surface",
+              "borderRadius": 8
+            },
+            "content": {
+              "placeholder": "Enter your email"
+            },
+            "meta": {
+              "purpose": "Email address input field",
+              "behavior": "Validates email format on blur",
+              "states": ["default", "focused", "error", "valid"]
+            }
+          },
+          {
+            "id": "password_input",
+            "type": "Input",
+            "name": "Password Input",
+            "layout": {
+              "mode": "absolute",
+              "x": 50,
+              "y": 240,
+              "w": 275,
+              "h": 44
+            },
+            "style": {
+              "background": "color.surface",
+              "borderRadius": 8
+            },
+            "content": {
+              "placeholder": "Enter your password"
+            },
+            "meta": {
+              "purpose": "Password input field",
+              "behavior": "Obscures text, shows toggle for visibility",
+              "states": ["default", "focused", "error"]
+            }
+          },
+          {
+            "id": "login_button",
+            "type": "Button",
+            "name": "Login Button",
+            "layout": {
+              "mode": "absolute",
+              "x": 50,
+              "y": 320,
+              "w": 275,
+              "h": 48
+            },
+            "style": {
+              "background": "color.primary",
+              "textColor": "#FFFFFF",
+              "borderRadius": 8
+            },
+            "content": {
+              "text": "Sign In"
+            },
+            "meta": {
+              "purpose": "Primary form submission action",
+              "behavior": "Validates form and submits credentials to API",
+              "states": ["default", "hover", "loading", "disabled"],
+              "notes": "Disabled until both email and password are valid",
+              "related": ["auth_flow", "error_handling"]
+            }
+          },
+          {
+            "id": "forgot_password",
+            "type": "Button",
+            "name": "Forgot Password Link",
+            "layout": {
+              "mode": "absolute",
+              "x": 100,
+              "y": 385,
+              "w": 175,
+              "h": 32
+            },
+            "style": {
+              "background": "transparent",
+              "textColor": "color.primary"
+            },
+            "content": {
+              "text": "Forgot Password?"
+            },
+            "meta": {
+              "purpose": "Navigation to password reset flow",
+              "behavior": "Opens password reset modal or navigates to reset page"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

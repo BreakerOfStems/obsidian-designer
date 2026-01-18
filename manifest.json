@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-ui-designer",
+  "name": "UI Designer",
+  "version": "0.1.0",
+  "minAppVersion": "1.0.0",
+  "description": "Visual UI layout designer with language-agnostic UI description format and semantic documentation",
+  "author": "Trist",
+  "isDesktopOnly": false
+}
