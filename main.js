@@ -999,7 +999,6 @@ var UIEditorView = class extends import_obsidian.TextFileView {
     this.canvas = null;
     this.renderer = null;
     this.interaction = null;
-    this.propertiesPanel = null;
     this.state = getEditorState();
   }
   getViewType() {
@@ -1018,15 +1017,12 @@ var UIEditorView = class extends import_obsidian.TextFileView {
     container.addClass("ui-editor-container");
     const toolbar = container.createDiv({ cls: "ui-editor-toolbar" });
     this.createToolbar(toolbar);
-    const mainArea = container.createDiv({ cls: "ui-editor-main" });
-    const canvasContainer = mainArea.createDiv({
+    const canvasContainer = container.createDiv({
       cls: "ui-editor-canvas-container"
     });
     this.canvas = canvasContainer.createEl("canvas", {
       cls: "ui-editor-canvas"
     });
-    this.propertiesPanel = mainArea.createDiv({ cls: "ui-editor-properties" });
-    this.createPropertiesPanel(this.propertiesPanel);
     this.renderer = new CanvasRenderer(this.canvas, this.state);
     this.interaction = new CanvasInteraction(
       this.canvas,
@@ -1038,8 +1034,6 @@ var UIEditorView = class extends import_obsidian.TextFileView {
         this.requestSave();
       }
     });
-    this.state.on("selection-changed", () => this.updatePropertiesPanel());
-    this.state.on("node-updated", () => this.updatePropertiesPanel());
   }
   async onClose() {
     var _a, _b;
@@ -1048,7 +1042,6 @@ var UIEditorView = class extends import_obsidian.TextFileView {
     this.canvas = null;
     this.renderer = null;
     this.interaction = null;
-    this.propertiesPanel = null;
   }
   createToolbar(container) {
     const nodeTypes = [
@@ -1115,156 +1108,6 @@ var UIEditorView = class extends import_obsidian.TextFileView {
       }
     });
   }
-  createPropertiesPanel(container) {
-    container.createDiv({ cls: "ui-editor-properties-header", text: "Properties" });
-    container.createDiv({ cls: "ui-editor-properties-content" });
-    this.updatePropertiesPanel();
-  }
-  updatePropertiesPanel() {
-    var _a, _b, _c, _d, _e, _f;
-    if (!this.propertiesPanel)
-      return;
-    const content = this.propertiesPanel.querySelector(".ui-editor-properties-content");
-    if (!content)
-      return;
-    content.empty();
-    const selectedNode = this.state.getSelectedNode();
-    if (!selectedNode) {
-      content.createDiv({
-        cls: "ui-editor-properties-empty",
-        text: "Select a node to edit properties"
-      });
-      return;
-    }
-    this.createField(content, "Name", "text", selectedNode.name || selectedNode.type, (val) => {
-      this.state.updateNode(selectedNode.id, { name: val });
-    });
-    this.createReadOnlyField(content, "Type", selectedNode.type);
-    if (selectedNode.layout.mode === "absolute") {
-      const layout = selectedNode.layout;
-      content.createDiv({ cls: "ui-editor-properties-section-title", text: "Position & Size" });
-      const posRow = content.createDiv({ cls: "ui-editor-properties-row-multi" });
-      this.createSmallNumberField(posRow, "X", layout.x, (val) => {
-        this.state.updateNodeLayout(selectedNode.id, { ...layout, x: val });
-      });
-      this.createSmallNumberField(posRow, "Y", layout.y, (val) => {
-        this.state.updateNodeLayout(selectedNode.id, { ...layout, y: val });
-      });
-      this.createSmallNumberField(posRow, "W", layout.w, (val) => {
-        this.state.updateNodeLayout(selectedNode.id, { ...layout, w: val });
-      });
-      this.createSmallNumberField(posRow, "H", layout.h, (val) => {
-        this.state.updateNodeLayout(selectedNode.id, { ...layout, h: val });
-      });
-    }
-    content.createDiv({ cls: "ui-editor-properties-section-title", text: "Style" });
-    const style = selectedNode.style || {};
-    this.createColorField(content, "Background Color", style.background || "", (val) => {
-      this.state.updateNodeStyle(selectedNode.id, { background: val });
-    });
-    this.createColorField(content, "Text Color", style.textColor || "", (val) => {
-      this.state.updateNodeStyle(selectedNode.id, { textColor: val });
-    });
-    if (((_a = selectedNode.content) == null ? void 0 : _a.text) !== void 0 || ["Button", "Text"].includes(selectedNode.type)) {
-      content.createDiv({ cls: "ui-editor-properties-section-title", text: "Content" });
-      this.createField(content, "Text", "text", ((_b = selectedNode.content) == null ? void 0 : _b.text) || "", (val) => {
-        this.state.updateNode(selectedNode.id, {
-          content: { ...selectedNode.content, text: val }
-        });
-      });
-    }
-    content.createDiv({ cls: "ui-editor-properties-section-title", text: "Documentation" });
-    this.createTextArea(content, "Description", ((_c = selectedNode.meta) == null ? void 0 : _c.purpose) || "", (val) => {
-      this.state.updateNode(selectedNode.id, {
-        meta: { ...selectedNode.meta, purpose: val }
-      });
-    });
-    this.createTextArea(content, "Behavior", ((_d = selectedNode.meta) == null ? void 0 : _d.behavior) || "", (val) => {
-      this.state.updateNode(selectedNode.id, {
-        meta: { ...selectedNode.meta, behavior: val }
-      });
-    });
-    this.createField(content, "States", "text", (((_e = selectedNode.meta) == null ? void 0 : _e.states) || []).join(", "), (val) => {
-      const states = val.split(",").map((s) => s.trim()).filter((s) => s);
-      this.state.updateNode(selectedNode.id, {
-        meta: { ...selectedNode.meta, states }
-      });
-    });
-    this.createField(content, "Related", "text", (((_f = selectedNode.meta) == null ? void 0 : _f.related) || []).join(", "), (val) => {
-      const related = val.split(",").map((s) => s.trim()).filter((s) => s);
-      this.state.updateNode(selectedNode.id, {
-        meta: { ...selectedNode.meta, related }
-      });
-    });
-  }
-  createField(parent, label, type, value, onChange) {
-    const row = parent.createDiv({ cls: "ui-editor-properties-row" });
-    row.createSpan({ cls: "ui-editor-properties-label", text: label });
-    const input = row.createEl("input", {
-      type,
-      value,
-      cls: "ui-editor-properties-input"
-    });
-    input.addEventListener("change", () => onChange(input.value));
-  }
-  createSmallNumberField(parent, label, value, onChange) {
-    const group = parent.createDiv({ cls: "ui-editor-properties-small-field" });
-    group.createSpan({ cls: "ui-editor-properties-small-label", text: label });
-    const input = group.createEl("input", {
-      type: "number",
-      value: String(value),
-      cls: "ui-editor-properties-small-input"
-    });
-    input.addEventListener("change", () => {
-      const num = parseFloat(input.value);
-      if (!isNaN(num))
-        onChange(num);
-    });
-  }
-  createColorField(parent, label, value, onChange) {
-    const row = parent.createDiv({ cls: "ui-editor-properties-row" });
-    row.createSpan({ cls: "ui-editor-properties-label", text: label });
-    const group = row.createDiv({ cls: "ui-editor-properties-color-group" });
-    const colorPicker = group.createEl("input", {
-      type: "color",
-      cls: "ui-editor-properties-color-picker"
-    });
-    const textInput = group.createEl("input", {
-      type: "text",
-      value,
-      cls: "ui-editor-properties-input ui-editor-properties-color-text",
-      attr: { placeholder: "#000000" }
-    });
-    if (/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/.test(value)) {
-      colorPicker.value = value;
-    } else {
-      colorPicker.value = "#000000";
-    }
-    colorPicker.addEventListener("input", () => {
-      textInput.value = colorPicker.value;
-      onChange(colorPicker.value);
-    });
-    textInput.addEventListener("change", () => {
-      if (/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/.test(textInput.value)) {
-        colorPicker.value = textInput.value;
-      }
-      onChange(textInput.value);
-    });
-  }
-  createTextArea(parent, label, value, onChange) {
-    const row = parent.createDiv({ cls: "ui-editor-properties-row ui-editor-properties-row-vertical" });
-    row.createSpan({ cls: "ui-editor-properties-label", text: label });
-    const textarea = row.createEl("textarea", {
-      cls: "ui-editor-properties-textarea"
-    });
-    textarea.value = value;
-    textarea.addEventListener("change", () => onChange(textarea.value));
-  }
-  createReadOnlyField(parent, label, value) {
-    const row = parent.createDiv({ cls: "ui-editor-properties-row" });
-    row.createSpan({ cls: "ui-editor-properties-label", text: label });
-    row.createSpan({ cls: "ui-editor-properties-value-readonly", text: value });
-  }
   // TextFileView methods
   getViewData() {
     return this.state.serialize();
@@ -1303,7 +1146,6 @@ var UIEditorView = class extends import_obsidian.TextFileView {
       }
       this.state.loadDocument(doc, this.file);
       this.state.setViewport({ panX: 50, panY: 50, zoom: 1 });
-      this.updatePropertiesPanel();
     } catch (e) {
       console.error("Failed to parse UI document:", e);
       const doc = this.state.createNewDocument((_b = this.file) == null ? void 0 : _b.basename);
