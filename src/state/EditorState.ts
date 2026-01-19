@@ -592,19 +592,119 @@ export class EditorState {
   }
 }
 
-// Singleton instance for sharing across views
-let globalState: EditorState | null = null;
+/**
+ * Manages EditorState instances per file path.
+ * Each UIDesign file gets its own isolated state.
+ */
+export class EditorStateManager {
+  private states: Map<string, EditorState> = new Map();
+  private activeFilePath: string | null = null;
+  private listeners: Map<string, Set<EventCallback>> = new Map();
 
-export function getEditorState(): EditorState {
-  if (!globalState) {
-    globalState = new EditorState();
+  /**
+   * Get or create an EditorState for a specific file path
+   */
+  getStateForFile(filePath: string): EditorState {
+    let state = this.states.get(filePath);
+    if (!state) {
+      state = new EditorState();
+      this.states.set(filePath, state);
+    }
+    return state;
   }
-  return globalState;
+
+  /**
+   * Get the state for the currently active file
+   */
+  getActiveState(): EditorState | null {
+    if (!this.activeFilePath) return null;
+    return this.states.get(this.activeFilePath) || null;
+  }
+
+  /**
+   * Set the active file path and notify listeners
+   */
+  setActiveFile(filePath: string | null): void {
+    if (this.activeFilePath === filePath) return;
+
+    this.activeFilePath = filePath;
+    this.emit("active-state-changed", filePath ? this.getStateForFile(filePath) : null);
+  }
+
+  /**
+   * Get the active file path
+   */
+  getActiveFilePath(): string | null {
+    return this.activeFilePath;
+  }
+
+  /**
+   * Remove state for a file (call when file is closed)
+   */
+  removeStateForFile(filePath: string): void {
+    const state = this.states.get(filePath);
+    if (state) {
+      state.destroy();
+      this.states.delete(filePath);
+    }
+
+    if (this.activeFilePath === filePath) {
+      this.activeFilePath = null;
+    }
+  }
+
+  /**
+   * Subscribe to manager events
+   */
+  on(event: string, callback: EventCallback): void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(callback);
+  }
+
+  /**
+   * Unsubscribe from manager events
+   */
+  off(event: string, callback: EventCallback): void {
+    this.listeners.get(event)?.delete(callback);
+  }
+
+  private emit(event: string, ...args: unknown[]): void {
+    this.listeners.get(event)?.forEach((cb) => cb(...args));
+  }
+
+  /**
+   * Clean up all states
+   */
+  destroy(): void {
+    for (const state of this.states.values()) {
+      state.destroy();
+    }
+    this.states.clear();
+    this.listeners.clear();
+    this.activeFilePath = null;
+  }
 }
 
-export function resetEditorState(): void {
-  if (globalState) {
-    globalState.destroy();
-    globalState = null;
+// Singleton manager instance
+let stateManager: EditorStateManager | null = null;
+
+export function getEditorStateManager(): EditorStateManager {
+  if (!stateManager) {
+    stateManager = new EditorStateManager();
   }
+  return stateManager;
+}
+
+export function resetEditorStateManager(): void {
+  if (stateManager) {
+    stateManager.destroy();
+    stateManager = null;
+  }
+}
+
+// Legacy compatibility - get active state (for sidebar views during transition)
+export function getEditorState(): EditorState | null {
+  return getEditorStateManager().getActiveState();
 }
