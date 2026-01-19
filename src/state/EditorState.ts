@@ -45,7 +45,7 @@ export class EditorState {
       isDirty: false,
     };
     this.listeners = new Map();
-    this.historyManager = new HistoryManager(this);
+    this.historyManager = new HistoryManager();
   }
 
   // Event emitter methods
@@ -75,6 +75,10 @@ export class EditorState {
     // Select first screen if available
     const screenIds = Object.keys(doc.screens);
     this.data.currentScreenId = screenIds.length > 0 ? screenIds[0] : null;
+
+    // Initialize history with loaded document
+    this.historyManager.clear();
+    this.historyManager.setCurrentState(doc);
 
     this.emit("document-loaded", doc);
     this.emit("selection-changed", []);
@@ -232,64 +236,263 @@ export class EditorState {
     return nodes;
   }
 
+  // Batch operations for grouping multiple changes into one undo step
+  startBatch(description: string): void {
+    this.historyManager.startBatch(description);
+  }
+
+  endBatch(): void {
+    if (this.data.document) {
+      this.historyManager.endBatch(this.data.document);
+    }
+  }
+
   // Modification methods
-  updateNode(nodeId: string, updates: Partial<UINode>): void {
+  updateNode(nodeId: string, updates: Partial<UINode>, description: string = "Update node"): void {
     const node = this.findNodeById(nodeId);
-    if (!node) return;
+    if (!node || !this.data.document) return;
 
     Object.assign(node, updates);
     this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
     this.emit("node-updated", nodeId, updates);
   }
 
   updateNodeLayout(
     nodeId: string,
-    layout: Partial<UINode["layout"]>
+    layout: Partial<UINode["layout"]>,
+    description: string = "Move/resize"
   ): void {
     const node = this.findNodeById(nodeId);
-    if (!node) return;
+    if (!node || !this.data.document) return;
 
     node.layout = { ...node.layout, ...layout } as UINode["layout"];
     this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
     this.emit("node-updated", nodeId, { layout: node.layout });
   }
 
-  updateNodeStyle(nodeId: string, style: Partial<UINode["style"]>): void {
+  updateNodeStyle(nodeId: string, style: Partial<UINode["style"]>, description: string = "Update style"): void {
     const node = this.findNodeById(nodeId);
-    if (!node) return;
+    if (!node || !this.data.document) return;
 
     node.style = { ...node.style, ...style };
     this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
     this.emit("node-updated", nodeId, { style: node.style });
   }
 
-  addNode(node: UINode, parentId?: string): void {
+  addNode(node: UINode, parentId?: string, description: string = "Add node"): void {
     const parent = parentId
       ? this.findNodeById(parentId)
       : this.getCurrentScreen()?.root;
 
-    if (!parent) return;
+    if (!parent || !this.data.document) return;
 
     if (!parent.children) {
       parent.children = [];
     }
     parent.children.push(node);
     this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
     this.emit("node-added", node, parentId);
   }
 
-  removeNode(nodeId: string): void {
+  removeNode(nodeId: string, description: string = "Delete node"): void {
     const parent = this.findParentNode(nodeId);
-    if (!parent || !parent.children) return;
+    if (!parent || !parent.children || !this.data.document) return;
 
     const index = parent.children.findIndex((c) => c.id === nodeId);
     if (index !== -1) {
       parent.children.splice(index, 1);
       this.data.selectedNodeIds.delete(nodeId);
       this.markDirty();
+      this.historyManager.commitChange(this.data.document, description);
       this.emit("node-removed", nodeId);
       this.emit("selection-changed", Array.from(this.data.selectedNodeIds));
     }
+  }
+
+  /**
+   * Get the absolute position of a node (accounting for all parent offsets)
+   */
+  getAbsolutePosition(nodeId: string): { x: number; y: number } | null {
+    const screen = this.getCurrentScreen();
+    if (!screen) return null;
+
+    return this.getAbsolutePositionRecursive(nodeId, screen.root, 0, 0);
+  }
+
+  private getAbsolutePositionRecursive(
+    nodeId: string,
+    node: UINode,
+    parentX: number,
+    parentY: number
+  ): { x: number; y: number } | null {
+    if (node.layout.mode !== "absolute") return null;
+
+    const absoluteX = parentX + node.layout.x;
+    const absoluteY = parentY + node.layout.y;
+
+    if (node.id === nodeId) {
+      return { x: absoluteX, y: absoluteY };
+    }
+
+    if (node.children) {
+      for (const child of node.children) {
+        const result = this.getAbsolutePositionRecursive(
+          nodeId,
+          child,
+          absoluteX,
+          absoluteY
+        );
+        if (result) return result;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Move a node to a new parent, adjusting coordinates to maintain visual position
+   */
+  reparentNode(nodeId: string, newParentId: string, description: string = "Reparent node"): boolean {
+    // Don't reparent root
+    if (nodeId === "root" || !this.data.document) return false;
+
+    const node = this.findNodeById(nodeId);
+    const newParent = this.findNodeById(newParentId);
+    const currentParent = this.findParentNode(nodeId);
+
+    if (!node || !newParent || !currentParent) return false;
+
+    // Don't reparent to self or to a descendant
+    if (newParentId === nodeId || this.isDescendant(newParentId, nodeId)) {
+      return false;
+    }
+
+    // Don't reparent if already a child of target
+    if (currentParent.id === newParentId) return false;
+
+    // Get current absolute position before reparenting
+    const absolutePos = this.getAbsolutePosition(nodeId);
+    if (!absolutePos) return false;
+
+    // Get new parent's absolute position
+    const newParentAbsolutePos = this.getAbsolutePosition(newParentId);
+    if (!newParentAbsolutePos) return false;
+
+    // Remove from current parent
+    if (currentParent.children) {
+      const index = currentParent.children.findIndex((c) => c.id === nodeId);
+      if (index !== -1) {
+        currentParent.children.splice(index, 1);
+      }
+    }
+
+    // Add to new parent
+    if (!newParent.children) {
+      newParent.children = [];
+    }
+    newParent.children.push(node);
+
+    // Update node coordinates to be relative to new parent
+    if (node.layout.mode === "absolute") {
+      node.layout.x = absolutePos.x - newParentAbsolutePos.x;
+      node.layout.y = absolutePos.y - newParentAbsolutePos.y;
+    }
+
+    this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
+    this.emit("node-updated", nodeId, { layout: node.layout });
+    return true;
+  }
+
+  /**
+   * Check if potentialDescendant is a descendant of ancestorId
+   */
+  private isDescendant(potentialDescendantId: string, ancestorId: string): boolean {
+    const ancestor = this.findNodeById(ancestorId);
+    if (!ancestor || !ancestor.children) return false;
+
+    for (const child of ancestor.children) {
+      if (child.id === potentialDescendantId) return true;
+      if (this.isDescendant(potentialDescendantId, child.id)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Find container node at given absolute coordinates, excluding specified node IDs
+   * Returns the deepest (most nested) container at that position
+   */
+  findContainerAtPosition(
+    worldX: number,
+    worldY: number,
+    excludeIds: string[]
+  ): string | null {
+    const screen = this.getCurrentScreen();
+    if (!screen) return null;
+
+    return this.findContainerAtPositionRecursive(
+      worldX,
+      worldY,
+      screen.root,
+      0,
+      0,
+      excludeIds
+    );
+  }
+
+  private findContainerAtPositionRecursive(
+    worldX: number,
+    worldY: number,
+    node: UINode,
+    parentX: number,
+    parentY: number,
+    excludeIds: string[]
+  ): string | null {
+    if (node.layout.mode !== "absolute") return null;
+
+    const nodeX = parentX + node.layout.x;
+    const nodeY = parentY + node.layout.y;
+
+    // Skip excluded nodes
+    if (excludeIds.includes(node.id)) {
+      return null;
+    }
+
+    // Check children first (deeper = more specific)
+    if (node.children) {
+      for (let i = node.children.length - 1; i >= 0; i--) {
+        const child = node.children[i];
+        // Only check containers
+        if (child.type === "Container" && !excludeIds.includes(child.id)) {
+          const result = this.findContainerAtPositionRecursive(
+            worldX,
+            worldY,
+            child,
+            nodeX,
+            nodeY,
+            excludeIds
+          );
+          if (result) return result;
+        }
+      }
+    }
+
+    // Check if point is inside this node (and it's a container)
+    if (
+      node.type === "Container" &&
+      worldX >= nodeX &&
+      worldX <= nodeX + node.layout.w &&
+      worldY >= nodeY &&
+      worldY <= nodeY + node.layout.h
+    ) {
+      return node.id;
+    }
+
+    return null;
   }
 
   // Dirty state
@@ -319,19 +522,57 @@ export class EditorState {
   }
 
   undo(): boolean {
-    const result = this.historyManager.undo();
-    if (result) {
+    if (!this.data.document) return false;
+
+    const restoredDoc = this.historyManager.undo(this.data.document);
+    if (restoredDoc) {
+      // Restore the document state
+      this.data.document = restoredDoc;
+
+      // Clear selection as nodes may no longer exist
+      this.data.selectedNodeIds.clear();
+      this.data.hoveredNodeId = null;
+
+      // Update current screen if needed
+      const screenIds = Object.keys(restoredDoc.screens);
+      if (this.data.currentScreenId && !restoredDoc.screens[this.data.currentScreenId]) {
+        this.data.currentScreenId = screenIds.length > 0 ? screenIds[0] : null;
+      }
+
+      this.markDirty();
+      this.emit("document-loaded", restoredDoc);
+      this.emit("selection-changed", []);
       this.emit("history-changed");
+      return true;
     }
-    return result;
+    return false;
   }
 
   redo(): boolean {
-    const result = this.historyManager.redo();
-    if (result) {
+    if (!this.data.document) return false;
+
+    const restoredDoc = this.historyManager.redo(this.data.document);
+    if (restoredDoc) {
+      // Restore the document state
+      this.data.document = restoredDoc;
+
+      // Clear selection as nodes may no longer exist
+      this.data.selectedNodeIds.clear();
+      this.data.hoveredNodeId = null;
+
+      // Update current screen if needed
+      const screenIds = Object.keys(restoredDoc.screens);
+      if (this.data.currentScreenId && !restoredDoc.screens[this.data.currentScreenId]) {
+        this.data.currentScreenId = screenIds.length > 0 ? screenIds[0] : null;
+      }
+
+      this.markDirty();
+      this.emit("document-loaded", restoredDoc);
+      this.emit("selection-changed", []);
       this.emit("history-changed");
+      return true;
     }
-    return result;
+    return false;
   }
 
   canUndo(): boolean {

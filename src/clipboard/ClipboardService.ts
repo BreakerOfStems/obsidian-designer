@@ -148,25 +148,19 @@ export class ClipboardService {
     // Determine parent for pasted nodes
     const parentId = this.determineParent(pastedNodes, cursorX, cursorY);
 
-    // Store previous selection for undo
-    const previousSelection = this.state.getSelectedNodeIds();
+    // Start a batch so all paste operations are one undo step
+    const description = `Paste ${pastedNodes.length} component${pastedNodes.length > 1 ? "s" : ""}`;
+    this.state.startBatch(description);
 
     // Add pasted nodes to the document
     const pastedIds: string[] = [];
-    const parentIds: (string | undefined)[] = [];
     for (const node of pastedNodes) {
-      this.state.addNode(node, parentId);
+      this.state.addNode(node, parentId, description);
       pastedIds.push(node.id);
-      parentIds.push(parentId);
     }
 
-    // Record the paste operation for undo
-    const historyManager = this.state.getHistoryManager();
-    historyManager.recordAdd(
-      pastedNodes,
-      parentIds,
-      `Paste ${pastedNodes.length} component${pastedNodes.length > 1 ? "s" : ""}`
-    );
+    // End the batch
+    this.state.endBatch();
 
     // Select the newly pasted nodes
     this.state.clearSelection();

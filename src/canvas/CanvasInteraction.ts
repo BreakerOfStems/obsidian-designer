@@ -6,6 +6,14 @@ import { ClipboardService } from "../clipboard/ClipboardService";
 
 type DragMode = "none" | "pan" | "move" | "resize";
 
+interface NodeStartPosition {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 interface DragState {
   mode: DragMode;
   startX: number;
@@ -17,6 +25,8 @@ interface DragState {
   startNodeW: number;
   startNodeH: number;
   resizeHandle: string | null;
+  // For multi-select movement
+  selectedNodesStart: NodeStartPosition[];
 }
 
 /**
@@ -32,6 +42,7 @@ export class CanvasInteraction {
   private clipboardService: ClipboardService;
   private lastMouseX: number = 0;
   private lastMouseY: number = 0;
+  private boundKeyDownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -54,6 +65,7 @@ export class CanvasInteraction {
       startNodeW: 0,
       startNodeH: 0,
       resizeHandle: null,
+      selectedNodesStart: [],
     };
 
     this.setupEventListeners();
@@ -70,9 +82,13 @@ export class CanvasInteraction {
     this.canvas.addEventListener("dblclick", this.onDoubleClick.bind(this));
     this.canvas.addEventListener("contextmenu", this.onContextMenu.bind(this));
 
-    // Keyboard events
+    // Keyboard events - use capture phase to intercept before Obsidian
     this.canvas.tabIndex = 0; // Make canvas focusable
-    this.canvas.addEventListener("keydown", this.onKeyDown.bind(this));
+    this.canvas.style.outline = "none"; // Remove focus outline
+    const keyHandler = this.onKeyDown.bind(this);
+    this.boundKeyDownHandler = keyHandler;
+    // Listen on the document in capture phase to catch events before Obsidian
+    document.addEventListener("keydown", keyHandler, true);
   }
 
   private getCanvasCoords(e: MouseEvent): { x: number; y: number } {
@@ -153,16 +169,65 @@ export class CanvasInteraction {
     }
   }
 
-  private onMouseUp(_e: MouseEvent): void {
+  private onMouseUp(e: MouseEvent): void {
+    // Handle reparenting after move
+    if (this.drag.mode === "move") {
+      this.handleDropReparent(e);
+      // End the move batch
+      this.state.endBatch();
+    } else if (this.drag.mode === "resize") {
+      // End the resize batch
+      this.state.endBatch();
+    }
+
     this.drag.mode = "none";
     this.drag.resizeHandle = null;
+    this.drag.selectedNodesStart = [];
     this.canvas.style.cursor = "default";
+  }
+
+  /**
+   * After dropping moved elements, reparent them to the container they're on top of
+   */
+  private handleDropReparent(_e: MouseEvent): void {
+    const selectedIds = this.state.getSelectedNodeIds();
+    if (selectedIds.length === 0) return;
+
+    // For each selected node, find what container it should belong to
+    for (const nodeId of selectedIds) {
+      const node = this.state.findNodeById(nodeId);
+      if (!node || node.layout.mode !== "absolute") continue;
+
+      // Get the center of the node in world coordinates
+      const absolutePos = this.state.getAbsolutePosition(nodeId);
+      if (!absolutePos) continue;
+
+      const nodeCenterX = absolutePos.x + node.layout.w / 2;
+      const nodeCenterY = absolutePos.y + node.layout.h / 2;
+
+      // Find the deepest container at the node's center, excluding selected nodes
+      const targetContainerId = this.state.findContainerAtPosition(
+        nodeCenterX,
+        nodeCenterY,
+        selectedIds
+      );
+
+      if (targetContainerId) {
+        // Reparent to the target container
+        this.state.reparentNode(nodeId, targetContainerId);
+      }
+    }
   }
 
   private onMouseLeave(_e: MouseEvent): void {
     this.state.setHoveredNode(null);
     if (this.drag.mode !== "none") {
+      // End any active batch if we were in move or resize mode
+      if (this.drag.mode === "move" || this.drag.mode === "resize") {
+        this.state.endBatch();
+      }
       this.drag.mode = "none";
+      this.drag.selectedNodesStart = [];
     }
   }
 
@@ -300,7 +365,13 @@ export class CanvasInteraction {
   }
 
   private onKeyDown(e: KeyboardEvent): void {
+    // Only handle events when canvas is focused
+    if (document.activeElement !== this.canvas) {
+      return;
+    }
+
     const selectedIds = this.state.getSelectedNodeIds();
+    let handled = false;
 
     switch (e.key) {
       case "Delete":
@@ -313,11 +384,12 @@ export class CanvasInteraction {
             this.state.removeNode(id);
           }
         }
-        e.preventDefault();
+        handled = true;
         break;
 
       case "Escape":
         this.state.clearSelection();
+        handled = true;
         break;
 
       case "a":
@@ -329,7 +401,7 @@ export class CanvasInteraction {
               this.state.selectNode(node.id, true);
             }
           }
-          e.preventDefault();
+          handled = true;
         }
         break;
 
@@ -337,7 +409,7 @@ export class CanvasInteraction {
         if (e.ctrlKey || e.metaKey) {
           // Copy selected nodes
           this.copySelection();
-          e.preventDefault();
+          handled = true;
         }
         break;
 
@@ -345,7 +417,7 @@ export class CanvasInteraction {
         if (e.ctrlKey || e.metaKey) {
           // Cut selected nodes (copy then delete)
           this.cutSelection();
-          e.preventDefault();
+          handled = true;
         }
         break;
 
@@ -353,7 +425,7 @@ export class CanvasInteraction {
         if (e.ctrlKey || e.metaKey) {
           // Paste at cursor position
           this.pasteAtCursor();
-          e.preventDefault();
+          handled = true;
         }
         break;
 
@@ -361,7 +433,7 @@ export class CanvasInteraction {
         if (e.ctrlKey || e.metaKey) {
           // Duplicate selected nodes
           this.duplicateSelection();
-          e.preventDefault();
+          handled = true;
         }
         break;
 
@@ -374,7 +446,7 @@ export class CanvasInteraction {
             // Undo
             this.state.undo();
           }
-          e.preventDefault();
+          handled = true;
         }
         break;
 
@@ -382,9 +454,14 @@ export class CanvasInteraction {
         if (e.ctrlKey || e.metaKey) {
           // Redo (alternative)
           this.state.redo();
-          e.preventDefault();
+          handled = true;
         }
         break;
+    }
+
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
     }
   }
 
@@ -402,6 +479,7 @@ export class CanvasInteraction {
       startNodeW: 0,
       startNodeH: 0,
       resizeHandle: null,
+      selectedNodesStart: [],
     };
     this.canvas.style.cursor = "grabbing";
   }
@@ -416,8 +494,31 @@ export class CanvasInteraction {
   }
 
   private startMove(x: number, y: number): void {
-    const node = this.state.getSelectedNode();
-    if (!node || node.layout.mode !== "absolute") return;
+    const selectedIds = this.state.getSelectedNodeIds();
+    if (selectedIds.length === 0) return;
+
+    // Capture initial positions for all selected nodes
+    const selectedNodesStart: NodeStartPosition[] = [];
+    for (const id of selectedIds) {
+      const node = this.state.findNodeById(id);
+      if (node && node.layout.mode === "absolute") {
+        selectedNodesStart.push({
+          id: node.id,
+          x: node.layout.x,
+          y: node.layout.y,
+          w: node.layout.w,
+          h: node.layout.h,
+        });
+      }
+    }
+
+    if (selectedNodesStart.length === 0) return;
+
+    // Start a batch so the entire move operation is one undo step
+    this.state.startBatch("Move");
+
+    // Use first selected node for backwards compatibility
+    const firstNode = selectedNodesStart[0];
 
     this.drag = {
       mode: "move",
@@ -425,35 +526,44 @@ export class CanvasInteraction {
       startY: y,
       startPanX: 0,
       startPanY: 0,
-      startNodeX: node.layout.x,
-      startNodeY: node.layout.y,
-      startNodeW: node.layout.w,
-      startNodeH: node.layout.h,
+      startNodeX: firstNode.x,
+      startNodeY: firstNode.y,
+      startNodeW: firstNode.w,
+      startNodeH: firstNode.h,
       resizeHandle: null,
+      selectedNodesStart,
     };
     this.canvas.style.cursor = "move";
   }
 
   private doMove(x: number, y: number): void {
-    const node = this.state.getSelectedNode();
-    if (!node || node.layout.mode !== "absolute") return;
+    if (this.drag.selectedNodesStart.length === 0) return;
 
     const viewport = this.state.getViewport();
     const dx = (x - this.drag.startX) / viewport.zoom;
     const dy = (y - this.drag.startY) / viewport.zoom;
 
-    this.state.updateNodeLayout(node.id, {
-      mode: "absolute",
-      x: this.snap(this.drag.startNodeX + dx),
-      y: this.snap(this.drag.startNodeY + dy),
-      w: node.layout.w,
-      h: node.layout.h,
-    });
+    // Move all selected nodes by the same delta
+    for (const startPos of this.drag.selectedNodesStart) {
+      const node = this.state.findNodeById(startPos.id);
+      if (!node || node.layout.mode !== "absolute") continue;
+
+      this.state.updateNodeLayout(startPos.id, {
+        mode: "absolute",
+        x: this.snap(startPos.x + dx),
+        y: this.snap(startPos.y + dy),
+        w: startPos.w,
+        h: startPos.h,
+      });
+    }
   }
 
   private startResize(x: number, y: number, handle: string): void {
     const node = this.state.getSelectedNode();
     if (!node || node.layout.mode !== "absolute") return;
+
+    // Start a batch so the entire resize operation is one undo step
+    this.state.startBatch("Resize");
 
     this.drag = {
       mode: "resize",
@@ -466,6 +576,7 @@ export class CanvasInteraction {
       startNodeW: node.layout.w,
       startNodeH: node.layout.h,
       resizeHandle: handle,
+      selectedNodesStart: [],
     };
     this.updateResizeCursor(handle);
   }
@@ -671,6 +782,10 @@ export class CanvasInteraction {
   }
 
   destroy(): void {
-    // Event listeners are automatically cleaned up when canvas is removed
+    // Remove document-level event listener
+    if (this.boundKeyDownHandler) {
+      document.removeEventListener("keydown", this.boundKeyDownHandler, true);
+      this.boundKeyDownHandler = null;
+    }
   }
 }

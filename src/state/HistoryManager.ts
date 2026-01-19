@@ -1,175 +1,137 @@
-import { UINode } from "../types/ui-schema";
-import { EditorState } from "./EditorState";
+import { UIDocument } from "../types/ui-schema";
 
 /**
- * Represents a single undoable action
+ * Represents a snapshot of the document state
  */
-export interface HistoryEntry {
-  type: "add" | "remove" | "update";
+export interface HistorySnapshot {
   timestamp: number;
   description: string;
-  /**
-   * Data needed to undo this action
-   */
-  undoData: {
-    nodeIds: string[];
-    nodes?: UINode[];
-    parentIds?: (string | undefined)[];
-    previousState?: Map<string, UINode>;
-  };
-  /**
-   * Data needed to redo this action
-   */
-  redoData: {
-    nodeIds: string[];
-    nodes?: UINode[];
-    parentIds?: (string | undefined)[];
-    newState?: Map<string, UINode>;
-  };
+  documentJson: string;
 }
 
 /**
- * Manages undo/redo history for the editor
+ * Manages undo/redo history using document snapshots.
+ * This approach is simpler and more reliable than tracking individual changes.
  */
 export class HistoryManager {
-  private state: EditorState;
-  private undoStack: HistoryEntry[] = [];
-  private redoStack: HistoryEntry[] = [];
+  private undoStack: HistorySnapshot[] = [];
+  private redoStack: HistorySnapshot[] = [];
   private maxHistorySize: number = 50;
-  private isApplyingHistory: boolean = false;
+  private currentDocumentJson: string = "";
+  private pendingDescription: string = "Change";
+  private batchDepth: number = 0;
+  private batchStartJson: string = "";
 
-  constructor(state: EditorState) {
-    this.state = state;
+  /**
+   * Set the current document state (call this when document is loaded)
+   */
+  setCurrentState(doc: UIDocument): void {
+    this.currentDocumentJson = JSON.stringify(doc);
   }
 
   /**
-   * Record adding nodes (for undo, we remove them)
+   * Call before making a change to capture the "before" state.
+   * Use description to identify what action is being performed.
    */
-  recordAdd(
-    nodes: UINode[],
-    parentIds: (string | undefined)[],
-    description: string = "Add nodes"
-  ): void {
-    if (this.isApplyingHistory) return;
-
-    const entry: HistoryEntry = {
-      type: "add",
-      timestamp: Date.now(),
-      description,
-      undoData: {
-        nodeIds: nodes.map((n) => n.id),
-      },
-      redoData: {
-        nodeIds: nodes.map((n) => n.id),
-        nodes: nodes.map((n) => this.deepClone(n)),
-        parentIds: [...parentIds],
-      },
-    };
-
-    this.pushEntry(entry);
+  beginChange(description: string = "Change"): void {
+    this.pendingDescription = description;
+    // If not in a batch, the current state becomes the undo point
   }
 
   /**
-   * Record removing nodes (for undo, we add them back)
+   * Start a batch of changes that should be undone as a single action.
+   * Call endBatch() when done. Batches can be nested.
    */
-  recordRemove(
-    nodes: UINode[],
-    parentIds: (string | undefined)[],
-    description: string = "Remove nodes"
-  ): void {
-    if (this.isApplyingHistory) return;
-
-    const entry: HistoryEntry = {
-      type: "remove",
-      timestamp: Date.now(),
-      description,
-      undoData: {
-        nodeIds: nodes.map((n) => n.id),
-        nodes: nodes.map((n) => this.deepClone(n)),
-        parentIds: [...parentIds],
-      },
-      redoData: {
-        nodeIds: nodes.map((n) => n.id),
-      },
-    };
-
-    this.pushEntry(entry);
+  startBatch(description: string = "Change"): void {
+    if (this.batchDepth === 0) {
+      this.batchStartJson = this.currentDocumentJson;
+      this.pendingDescription = description;
+    }
+    this.batchDepth++;
   }
 
   /**
-   * Undo the last action
-   * Returns true if undo was successful
+   * End a batch of changes
    */
-  undo(): boolean {
-    const entry = this.undoStack.pop();
-    if (!entry) return false;
-
-    this.isApplyingHistory = true;
-
-    try {
-      switch (entry.type) {
-        case "add":
-          // Undo add = remove the nodes
-          for (const nodeId of entry.undoData.nodeIds) {
-            this.state.removeNode(nodeId);
-          }
-          break;
-
-        case "remove":
-          // Undo remove = add the nodes back
-          if (entry.undoData.nodes && entry.undoData.parentIds) {
-            for (let i = 0; i < entry.undoData.nodes.length; i++) {
-              const node = this.deepClone(entry.undoData.nodes[i]);
-              const parentId = entry.undoData.parentIds[i];
-              this.state.addNode(node, parentId);
-            }
-          }
-          break;
+  endBatch(doc: UIDocument): void {
+    if (this.batchDepth > 0) {
+      this.batchDepth--;
+      if (this.batchDepth === 0) {
+        const newJson = JSON.stringify(doc);
+        // Only push to history if something actually changed
+        if (newJson !== this.batchStartJson) {
+          this.pushSnapshot(this.batchStartJson, this.pendingDescription);
+          this.currentDocumentJson = newJson;
+        }
+        this.batchStartJson = "";
       }
-
-      this.redoStack.push(entry);
-      return true;
-    } finally {
-      this.isApplyingHistory = false;
     }
   }
 
   /**
-   * Redo the last undone action
-   * Returns true if redo was successful
+   * Call after making a change to record it in history.
+   * Pass the new document state.
    */
-  redo(): boolean {
-    const entry = this.redoStack.pop();
-    if (!entry) return false;
-
-    this.isApplyingHistory = true;
-
-    try {
-      switch (entry.type) {
-        case "add":
-          // Redo add = add the nodes
-          if (entry.redoData.nodes && entry.redoData.parentIds) {
-            for (let i = 0; i < entry.redoData.nodes.length; i++) {
-              const node = this.deepClone(entry.redoData.nodes[i]);
-              const parentId = entry.redoData.parentIds[i];
-              this.state.addNode(node, parentId);
-            }
-          }
-          break;
-
-        case "remove":
-          // Redo remove = remove the nodes
-          for (const nodeId of entry.redoData.nodeIds) {
-            this.state.removeNode(nodeId);
-          }
-          break;
-      }
-
-      this.undoStack.push(entry);
-      return true;
-    } finally {
-      this.isApplyingHistory = false;
+  commitChange(doc: UIDocument, description?: string): void {
+    // If we're in a batch, don't commit individual changes
+    if (this.batchDepth > 0) {
+      return;
     }
+
+    const newJson = JSON.stringify(doc);
+
+    // Only push to history if something actually changed
+    if (newJson !== this.currentDocumentJson) {
+      this.pushSnapshot(
+        this.currentDocumentJson,
+        description || this.pendingDescription
+      );
+      this.currentDocumentJson = newJson;
+    }
+  }
+
+  /**
+   * Undo the last action.
+   * Returns the document state to restore, or null if nothing to undo.
+   */
+  undo(currentDoc: UIDocument): UIDocument | null {
+    const snapshot = this.undoStack.pop();
+    if (!snapshot) return null;
+
+    // Push current state to redo stack
+    this.redoStack.push({
+      timestamp: Date.now(),
+      description: snapshot.description,
+      documentJson: JSON.stringify(currentDoc),
+    });
+
+    // Restore the snapshot
+    const restoredDoc = JSON.parse(snapshot.documentJson) as UIDocument;
+    this.currentDocumentJson = snapshot.documentJson;
+
+    return restoredDoc;
+  }
+
+  /**
+   * Redo the last undone action.
+   * Returns the document state to restore, or null if nothing to redo.
+   */
+  redo(currentDoc: UIDocument): UIDocument | null {
+    const snapshot = this.redoStack.pop();
+    if (!snapshot) return null;
+
+    // Push current state to undo stack
+    this.undoStack.push({
+      timestamp: Date.now(),
+      description: snapshot.description,
+      documentJson: JSON.stringify(currentDoc),
+    });
+
+    // Restore the snapshot
+    const restoredDoc = JSON.parse(snapshot.documentJson) as UIDocument;
+    this.currentDocumentJson = snapshot.documentJson;
+
+    return restoredDoc;
   }
 
   /**
@@ -208,17 +170,30 @@ export class HistoryManager {
   clear(): void {
     this.undoStack = [];
     this.redoStack = [];
+    this.batchDepth = 0;
+    this.batchStartJson = "";
   }
 
   /**
-   * Check if we're currently applying history (to avoid recording during undo/redo)
+   * Get undo stack size (for debugging)
    */
-  isApplying(): boolean {
-    return this.isApplyingHistory;
+  getUndoStackSize(): number {
+    return this.undoStack.length;
   }
 
-  private pushEntry(entry: HistoryEntry): void {
-    this.undoStack.push(entry);
+  /**
+   * Get redo stack size (for debugging)
+   */
+  getRedoStackSize(): number {
+    return this.redoStack.length;
+  }
+
+  private pushSnapshot(documentJson: string, description: string): void {
+    this.undoStack.push({
+      timestamp: Date.now(),
+      description,
+      documentJson,
+    });
 
     // Clear redo stack when a new action is performed
     this.redoStack = [];
@@ -227,9 +202,5 @@ export class HistoryManager {
     if (this.undoStack.length > this.maxHistorySize) {
       this.undoStack.shift();
     }
-  }
-
-  private deepClone<T>(obj: T): T {
-    return JSON.parse(JSON.stringify(obj));
   }
 }
