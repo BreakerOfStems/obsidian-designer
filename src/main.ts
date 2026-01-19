@@ -1,9 +1,8 @@
-import { Plugin, WorkspaceLeaf, Notice, TFile } from "obsidian";
+import { Plugin, WorkspaceLeaf } from "obsidian";
 import { UIEditorView, UI_EDITOR_VIEW_TYPE } from "./views/UIEditorView";
 import { NodeTreeView, NODE_TREE_VIEW_TYPE } from "./views/NodeTreeView";
 import { PropertiesView, PROPERTIES_VIEW_TYPE } from "./views/PropertiesView";
 import { resetEditorState, getEditorState } from "./state/EditorState";
-import { MarkdownGenerator } from "./utils/MarkdownGenerator";
 import { UIDocument } from "./types/ui-schema";
 
 export default class UIDesignerPlugin extends Plugin {
@@ -42,12 +41,6 @@ export default class UIDesignerPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "generate-markdown",
-      name: "Generate Markdown documentation",
-      callback: () => this.generateMarkdown(),
-    });
-
-    this.addCommand({
       id: "open-node-tree",
       name: "Open node tree panel",
       callback: () => this.activateView(NODE_TREE_VIEW_TYPE, "left"),
@@ -60,10 +53,11 @@ export default class UIDesignerPlugin extends Plugin {
     });
 
     // Clipboard commands - use checkCallback for custom views
+    // Note: Hotkeys are handled by canvas-level keyboard handler in CanvasInteraction.ts
+    // to avoid conflicts with Obsidian's built-in clipboard commands
     this.addCommand({
       id: "copy-selection",
       name: "Copy selected components",
-      hotkeys: [{ modifiers: ["Mod"], key: "c" }],
       checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
@@ -85,7 +79,6 @@ export default class UIDesignerPlugin extends Plugin {
     this.addCommand({
       id: "cut-selection",
       name: "Cut selected components",
-      hotkeys: [{ modifiers: ["Mod"], key: "x" }],
       checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
@@ -107,7 +100,6 @@ export default class UIDesignerPlugin extends Plugin {
     this.addCommand({
       id: "paste-components",
       name: "Paste components",
-      hotkeys: [{ modifiers: ["Mod"], key: "v" }],
       checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
@@ -128,7 +120,6 @@ export default class UIDesignerPlugin extends Plugin {
     this.addCommand({
       id: "duplicate-selection",
       name: "Duplicate selected components",
-      hotkeys: [{ modifiers: ["Mod"], key: "d" }],
       checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
@@ -151,7 +142,6 @@ export default class UIDesignerPlugin extends Plugin {
     this.addCommand({
       id: "undo",
       name: "Undo",
-      hotkeys: [{ modifiers: ["Mod"], key: "z" }],
       checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
@@ -170,10 +160,6 @@ export default class UIDesignerPlugin extends Plugin {
     this.addCommand({
       id: "redo",
       name: "Redo",
-      hotkeys: [
-        { modifiers: ["Mod", "Shift"], key: "z" },
-        { modifiers: ["Mod"], key: "y" },
-      ],
       checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
@@ -206,32 +192,6 @@ export default class UIDesignerPlugin extends Plugin {
     this.app.workspace.detachLeavesOfType(UI_EDITOR_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(NODE_TREE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(PROPERTIES_VIEW_TYPE);
-  }
-
-  private async generateMarkdown(): Promise<void> {
-    const state = getEditorState();
-    const doc = state.getDocument();
-    const file = state.getFile();
-
-    if (!doc || !file) {
-      new Notice("No UI design document open");
-      return;
-    }
-
-    // Generate markdown
-    const markdown = MarkdownGenerator.generate(doc);
-
-    // Create or update the corresponding .md file
-    const mdPath = file.path.replace(/\.uidesign$/, ".md");
-
-    const existingFile = this.app.vault.getAbstractFileByPath(mdPath);
-    if (existingFile instanceof TFile) {
-      await this.app.vault.modify(existingFile, markdown);
-      new Notice(`Updated: ${mdPath}`);
-    } else {
-      await this.app.vault.create(mdPath, markdown);
-      new Notice(`Created: ${mdPath}`);
-    }
   }
 
   private async createNewUIFile(): Promise<void> {

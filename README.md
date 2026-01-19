@@ -1,16 +1,19 @@
 # Obsidian UI Designer
 
-A visual UI layout designer plugin for Obsidian with a language-agnostic UI description format and documentation generation.
+A visual UI layout designer plugin for Obsidian. Create and edit UI mockups with a canvas-based editor, storing designs in a language-agnostic JSON format.
 
 ## Features
 
 - **Visual Canvas Editor** - Drag, move, and resize UI elements on an HTML5 canvas
 - **Language-Agnostic Format** - UI designs stored as `.uidesign` JSON files, not tied to any framework
 - **Design Tokens** - Reusable colors, spacing, and style values
-- **Inline Properties Panel** - Edit position, size, colors, and documentation inline
-- **Node Tree** - Hierarchical view of your UI structure
-- **Markdown Export** - Generate structured documentation from your designs
-- **Snap-to-Grid** - Align elements precisely with toggleable grid snapping
+- **Node Tree Panel** - Hierarchical view of your UI structure
+- **Properties Panel** - Edit position, size, and style properties
+- **Multi-Select** - Select multiple elements (Shift+click) and move them together
+- **Copy/Paste** - Copy, cut, paste, and duplicate components (Ctrl+C/X/V/D)
+- **Undo/Redo** - Full session undo/redo support (Ctrl+Z/Y)
+- **Auto-Reparenting** - Elements automatically become children of containers when dropped onto them
+- **Snap-to-Grid** - Align elements precisely with grid snapping
 
 ## Installation
 
@@ -38,30 +41,42 @@ Copy `main.js`, `manifest.json`, and `styles.css` to your vault's plugin folder.
 
 ### Editor Controls
 
-- **Pan**: Middle-click drag or Space + drag
-- **Zoom**: Scroll wheel
-- **Select**: Click on a node
-- **Move**: Drag selected node
-- **Resize**: Drag corner/edge handles
-- **Add Node**: Use toolbar buttons (Container, Button, Text, Input, Image)
-- **Delete**: Select node and press Delete key
+| Action | Control |
+|--------|---------|
+| Pan | Middle-click drag or Alt + drag |
+| Zoom | Ctrl + scroll wheel |
+| Select | Click on element |
+| Multi-select | Shift + click |
+| Move | Drag selected element(s) |
+| Resize | Drag corner/edge handles |
+| Delete | Delete or Backspace key |
+| Copy | Ctrl+C |
+| Cut | Ctrl+X |
+| Paste | Ctrl+V |
+| Duplicate | Ctrl+D |
+| Undo | Ctrl+Z |
+| Redo | Ctrl+Y or Ctrl+Shift+Z |
+| Select All | Ctrl+A |
+
+### Adding Elements
+
+Use the toolbar buttons to add new elements:
+- **Container** - Layout container for grouping elements
+- **Button** - Clickable button element
+- **Text** - Text label
+- **Input** - Text input field
+- **Image** - Image placeholder
 
 ### Properties Panel
 
-Select a node to edit its properties in the right panel:
-
-- **Position & Size** - X, Y, Width, Height
-- **Style** - Background color, text color
-- **Content** - Text content
-- **Documentation** - Purpose, behavior, states, related concepts
-
-### Generating Documentation
-
-Use Command Palette: "Generate Markdown documentation" to export your design as a `.md` file.
+Select an element to edit its properties:
+- **Position** - X, Y coordinates
+- **Size** - Width, Height
+- **Style** - Background color, text color, border radius
 
 ## File Format
 
-UI designs are stored as JSON with the following structure:
+UI designs are stored as JSON with the `.uidesign` extension:
 
 ```json
 {
@@ -69,36 +84,45 @@ UI designs are stored as JSON with the following structure:
   "name": "My Design",
   "tokens": {
     "color.primary": "#2E6BE6",
+    "color.background": "#FFFFFF",
     "space.md": 16
   },
-  "components": {},
   "screens": {
     "main": {
       "id": "main",
       "name": "Main Screen",
-      "root": { ... }
+      "root": {
+        "id": "root",
+        "type": "Container",
+        "layout": { "mode": "absolute", "x": 0, "y": 0, "w": 375, "h": 667 },
+        "children": []
+      }
     }
   }
 }
 ```
 
-### Node Structure
+### Element Types
 
-Each UI element has:
+| Type | Description |
+|------|-------------|
+| Container | Layout container, can have children |
+| Button | Clickable button with text |
+| Text | Static text label |
+| Input | Text input field |
+| Image | Image placeholder |
 
-- **id** - Unique identifier
-- **type** - Container, Button, Text, Input, Image
-- **layout** - Position and size (absolute or auto-layout)
-- **style** - Visual properties (colors, borders)
-- **content** - Text and icon content
-- **meta** - Documentation (purpose, behavior, states, notes)
+### Layout
+
+Elements use absolute positioning with:
+- `x`, `y` - Position relative to parent
+- `w`, `h` - Width and height
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | Create new UI design file | Creates a new `.uidesign` file |
-| Generate Markdown documentation | Exports design to Markdown |
 | Open node tree panel | Shows hierarchy sidebar |
 | Open properties panel | Shows properties sidebar |
 

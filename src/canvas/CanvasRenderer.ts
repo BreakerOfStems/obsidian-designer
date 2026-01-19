@@ -376,7 +376,13 @@ export class CanvasRenderer {
     const worldX = (screenX - viewport.panX) / viewport.zoom;
     const worldY = (screenY - viewport.panY) / viewport.zoom;
 
-    const { x, y, w, h } = selectedNode.layout;
+    // Get absolute position (accounting for parent offsets)
+    const absolutePos = this.state.getAbsolutePosition(selectedNode.id);
+    if (!absolutePos) return null;
+
+    const x = absolutePos.x;
+    const y = absolutePos.y;
+    const { w, h } = selectedNode.layout;
     const handleSize = 8 / viewport.zoom;
     const tolerance = handleSize;
 
