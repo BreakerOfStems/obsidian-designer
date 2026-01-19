@@ -1,3 +1,4 @@
+import { Menu } from "obsidian";
 import { EditorState } from "../state/EditorState";
 import { CanvasRenderer } from "./CanvasRenderer";
 import { createNode, NodeType } from "../types/ui-schema";
@@ -67,6 +68,7 @@ export class CanvasInteraction {
       passive: false,
     });
     this.canvas.addEventListener("dblclick", this.onDoubleClick.bind(this));
+    this.canvas.addEventListener("contextmenu", this.onContextMenu.bind(this));
 
     // Keyboard events
     this.canvas.tabIndex = 0; // Make canvas focusable
@@ -205,6 +207,96 @@ export class CanvasInteraction {
       // For now, just reset viewport
       this.state.setViewport({ panX: 50, panY: 50, zoom: 1 });
     }
+  }
+
+  private onContextMenu(e: MouseEvent): void {
+    e.preventDefault();
+    const coords = this.getCanvasCoords(e);
+
+    // Update mouse position for paste operations
+    this.lastMouseX = coords.x;
+    this.lastMouseY = coords.y;
+
+    // Check if right-clicked on a node
+    const hitNodeId = this.renderer.hitTest(coords.x, coords.y);
+
+    // If clicked on a node that isn't selected, select it
+    if (hitNodeId && !this.state.isNodeSelected(hitNodeId)) {
+      this.state.selectNode(hitNodeId);
+    }
+
+    const selectedIds = this.state.getSelectedNodeIds();
+    const hasSelection = selectedIds.length > 0;
+    const hasClipboard = this.hasClipboardContent();
+
+    // Create Obsidian menu
+    const menu = new Menu();
+
+    // Copy option
+    menu.addItem((item) => {
+      item
+        .setTitle("Copy")
+        .setIcon("copy")
+        .setDisabled(!hasSelection)
+        .onClick(() => {
+          this.copySelection();
+        });
+    });
+
+    // Cut option
+    menu.addItem((item) => {
+      item
+        .setTitle("Cut")
+        .setIcon("scissors")
+        .setDisabled(!hasSelection)
+        .onClick(() => {
+          this.cutSelection();
+        });
+    });
+
+    // Paste option
+    menu.addItem((item) => {
+      item
+        .setTitle("Paste")
+        .setIcon("clipboard-paste")
+        .setDisabled(!hasClipboard)
+        .onClick(() => {
+          this.pasteAtCursor();
+        });
+    });
+
+    // Separator
+    menu.addSeparator();
+
+    // Duplicate option
+    menu.addItem((item) => {
+      item
+        .setTitle("Duplicate")
+        .setIcon("copy-plus")
+        .setDisabled(!hasSelection)
+        .onClick(() => {
+          this.duplicateSelection();
+        });
+    });
+
+    // Delete option
+    menu.addItem((item) => {
+      item
+        .setTitle("Delete")
+        .setIcon("trash-2")
+        .setDisabled(!hasSelection)
+        .onClick(() => {
+          for (const id of selectedIds) {
+            const node = this.state.findNodeById(id);
+            if (node && node.id !== "root") {
+              this.state.removeNode(id);
+            }
+          }
+        });
+    });
+
+    // Show menu at mouse position
+    menu.showAtMouseEvent(e);
   }
 
   private onKeyDown(e: KeyboardEvent): void {
