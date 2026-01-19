@@ -2,7 +2,7 @@ import { Plugin, WorkspaceLeaf } from "obsidian";
 import { UIEditorView, UI_EDITOR_VIEW_TYPE } from "./views/UIEditorView";
 import { NodeTreeView, NODE_TREE_VIEW_TYPE } from "./views/NodeTreeView";
 import { PropertiesView, PROPERTIES_VIEW_TYPE } from "./views/PropertiesView";
-import { resetEditorState, getEditorState } from "./state/EditorState";
+import { getEditorStateManager, resetEditorStateManager } from "./state/EditorState";
 import { UIDocument } from "./types/ui-schema";
 
 export default class UIDesignerPlugin extends Plugin {
@@ -63,7 +63,8 @@ export default class UIDesignerPlugin extends Plugin {
         if (!uiView) return false;
 
         const interaction = uiView.getInteraction();
-        const hasSelection = getEditorState().getSelectedNodeIds().length > 0;
+        const state = uiView.getEditorState();
+        const hasSelection = state.getSelectedNodeIds().length > 0;
 
         if (checking) {
           return hasSelection;
@@ -84,7 +85,8 @@ export default class UIDesignerPlugin extends Plugin {
         if (!uiView) return false;
 
         const interaction = uiView.getInteraction();
-        const hasSelection = getEditorState().getSelectedNodeIds().length > 0;
+        const state = uiView.getEditorState();
+        const hasSelection = state.getSelectedNodeIds().length > 0;
 
         if (checking) {
           return hasSelection;
@@ -125,7 +127,8 @@ export default class UIDesignerPlugin extends Plugin {
         if (!uiView) return false;
 
         const interaction = uiView.getInteraction();
-        const hasSelection = getEditorState().getSelectedNodeIds().length > 0;
+        const state = uiView.getEditorState();
+        const hasSelection = state.getSelectedNodeIds().length > 0;
 
         if (checking) {
           return hasSelection;
@@ -146,7 +149,7 @@ export default class UIDesignerPlugin extends Plugin {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
 
-        const state = getEditorState();
+        const state = uiView.getEditorState();
 
         if (checking) {
           return state.canUndo();
@@ -164,7 +167,7 @@ export default class UIDesignerPlugin extends Plugin {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
 
-        const state = getEditorState();
+        const state = uiView.getEditorState();
 
         if (checking) {
           return state.canRedo();
@@ -180,7 +183,21 @@ export default class UIDesignerPlugin extends Plugin {
       this.registerEvent(
         this.app.workspace.on("active-leaf-change", (leaf) => {
           if (leaf?.view.getViewType() === UI_EDITOR_VIEW_TYPE) {
+            const uiView = leaf.view as UIEditorView;
+            // Set the active file in the state manager so sidebar views update
+            if (uiView.file) {
+              getEditorStateManager().setActiveFile(uiView.file.path);
+            }
             this.ensurePanelsOpen();
+          } else {
+            // If switching to a non-UI editor view, clear the active file
+            // so sidebar views show "No document loaded"
+            // Note: We only do this if there are no other UI editor views active
+            const hasActiveUIEditor = this.app.workspace.getLeavesOfType(UI_EDITOR_VIEW_TYPE)
+              .some(l => l === this.app.workspace.getLeaf());
+            if (!hasActiveUIEditor) {
+              getEditorStateManager().setActiveFile(null);
+            }
           }
         })
       );
@@ -188,7 +205,7 @@ export default class UIDesignerPlugin extends Plugin {
   }
 
   onunload(): void {
-    resetEditorState();
+    resetEditorStateManager();
     this.app.workspace.detachLeavesOfType(UI_EDITOR_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(NODE_TREE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(PROPERTIES_VIEW_TYPE);

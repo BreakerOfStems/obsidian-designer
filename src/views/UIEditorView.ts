@@ -1,6 +1,6 @@
 import { TextFileView, WorkspaceLeaf, Menu } from "obsidian";
 import { UIDocument, NodeType } from "../types/ui-schema";
-import { EditorState, getEditorState } from "../state/EditorState";
+import { EditorState, getEditorStateManager } from "../state/EditorState";
 import { CanvasRenderer } from "../canvas/CanvasRenderer";
 import { CanvasInteraction } from "../canvas/CanvasInteraction";
 
@@ -11,14 +11,36 @@ export const UI_EDITOR_VIEW_TYPE = "ui-editor-view";
  * Provides a canvas-based UI layout designer
  */
 export class UIEditorView extends TextFileView {
-  private state: EditorState;
+  private state: EditorState | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private renderer: CanvasRenderer | null = null;
   private interaction: CanvasInteraction | null = null;
+  private dirtyHandler: ((isDirty: unknown) => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf) {
     super(leaf);
-    this.state = getEditorState();
+    // State will be initialized in setViewData when we know the file
+  }
+
+  /**
+   * Get the state for this view (creates one tied to the file path)
+   */
+  private ensureState(): EditorState {
+    if (!this.state && this.file) {
+      this.state = getEditorStateManager().getStateForFile(this.file.path);
+    }
+    if (!this.state) {
+      // Fallback: create a temporary state if file isn't set yet
+      this.state = getEditorStateManager().getStateForFile("__temp__");
+    }
+    return this.state;
+  }
+
+  /**
+   * Get the EditorState for external access (e.g., clipboard commands)
+   */
+  getEditorState(): EditorState {
+    return this.ensureState();
   }
 
   getViewType(): string {
@@ -52,28 +74,57 @@ export class UIEditorView extends TextFileView {
       cls: "ui-editor-canvas",
     });
 
-    // Initialize renderer and interaction
-    this.renderer = new CanvasRenderer(this.canvas, this.state);
+    // Note: renderer and interaction will be initialized in setViewData
+    // when we have the file and state ready
+  }
+
+  /**
+   * Initialize or reinitialize renderer and interaction with current state
+   */
+  private initializeCanvas(): void {
+    if (!this.canvas) return;
+
+    // Clean up existing renderer/interaction
+    this.renderer?.destroy();
+    this.interaction?.destroy();
+
+    // Remove old dirty handler if exists
+    if (this.dirtyHandler && this.state) {
+      this.state.off("dirty-changed", this.dirtyHandler);
+    }
+
+    const state = this.ensureState();
+
+    // Initialize renderer and interaction with the file-specific state
+    this.renderer = new CanvasRenderer(this.canvas, state);
     this.interaction = new CanvasInteraction(
       this.canvas,
-      this.state,
+      state,
       this.renderer
     );
 
     // Listen for state changes
-    this.state.on("dirty-changed", (isDirty: unknown) => {
+    this.dirtyHandler = (isDirty: unknown) => {
       if (isDirty) {
         this.requestSave();
       }
-    });
+    };
+    state.on("dirty-changed", this.dirtyHandler);
   }
 
   async onClose(): Promise<void> {
+    // Remove dirty handler
+    if (this.dirtyHandler && this.state) {
+      this.state.off("dirty-changed", this.dirtyHandler);
+      this.dirtyHandler = null;
+    }
+
     this.renderer?.destroy();
     this.interaction?.destroy();
     this.canvas = null;
     this.renderer = null;
     this.interaction = null;
+    this.state = null;
   }
 
   private createToolbar(container: HTMLElement): void {
@@ -112,7 +163,7 @@ export class UIEditorView extends TextFileView {
     });
     resetViewBtn.textContent = "Reset View";
     resetViewBtn.addEventListener("click", () => {
-      this.state.setViewport({ panX: 50, panY: 50, zoom: 1 });
+      this.ensureState().setViewport({ panX: 50, panY: 50, zoom: 1 });
     });
 
     const zoomInBtn = viewGroup.createEl("button", {
@@ -121,8 +172,9 @@ export class UIEditorView extends TextFileView {
     });
     zoomInBtn.textContent = "+";
     zoomInBtn.addEventListener("click", () => {
-      const viewport = this.state.getViewport();
-      this.state.setViewport({ zoom: Math.min(viewport.zoom * 1.2, 5) });
+      const state = this.ensureState();
+      const viewport = state.getViewport();
+      state.setViewport({ zoom: Math.min(viewport.zoom * 1.2, 5) });
     });
 
     const zoomOutBtn = viewGroup.createEl("button", {
@@ -131,8 +183,9 @@ export class UIEditorView extends TextFileView {
     });
     zoomOutBtn.textContent = "-";
     zoomOutBtn.addEventListener("click", () => {
-      const viewport = this.state.getViewport();
-      this.state.setViewport({ zoom: Math.max(viewport.zoom / 1.2, 0.1) });
+      const state = this.ensureState();
+      const viewport = state.getViewport();
+      state.setViewport({ zoom: Math.max(viewport.zoom / 1.2, 0.1) });
     });
 
     // Separator
@@ -158,7 +211,7 @@ export class UIEditorView extends TextFileView {
 
   // TextFileView methods
   getViewData(): string {
-    return this.state.serialize();
+    return this.ensureState().serialize();
   }
 
   setViewData(data: string, clear: boolean): void {
@@ -166,11 +219,19 @@ export class UIEditorView extends TextFileView {
       this.clear();
     }
 
+    // Get state for this specific file
+    const state = this.ensureState();
+
+    // Set this file as active in the state manager
+    if (this.file) {
+      getEditorStateManager().setActiveFile(this.file.path);
+    }
+
     try {
       let doc: UIDocument;
 
       if (!data || data.trim() === "") {
-        doc = this.state.createNewDocument(this.file?.basename);
+        doc = state.createNewDocument(this.file?.basename);
       } else {
         doc = JSON.parse(data);
 
@@ -194,17 +255,21 @@ export class UIEditorView extends TextFileView {
         }
       }
 
-      this.state.loadDocument(doc, this.file!);
-      this.state.setViewport({ panX: 50, panY: 50, zoom: 1 });
+      state.loadDocument(doc, this.file!);
+      state.setViewport({ panX: 50, panY: 50, zoom: 1 });
+
+      // Initialize canvas with the proper state
+      this.initializeCanvas();
     } catch (e) {
       console.error("Failed to parse UI document:", e);
-      const doc = this.state.createNewDocument(this.file?.basename);
-      this.state.loadDocument(doc, this.file!);
+      const doc = state.createNewDocument(this.file?.basename);
+      state.loadDocument(doc, this.file!);
+      this.initializeCanvas();
     }
   }
 
   clear(): void {
-    this.state.clearSelection();
+    this.ensureState().clearSelection();
   }
 
   onPaneMenu(menu: Menu, source: string): void {
@@ -215,7 +280,7 @@ export class UIEditorView extends TextFileView {
         .setTitle("Reset View")
         .setIcon("refresh-cw")
         .onClick(() => {
-          this.state.setViewport({ panX: 50, panY: 50, zoom: 1 });
+          this.ensureState().setViewport({ panX: 50, panY: 50, zoom: 1 });
         });
     });
   }

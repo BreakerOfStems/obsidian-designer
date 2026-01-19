@@ -1,19 +1,62 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { UINode, NodeStyle, NodeMeta, NodeContent, AbsoluteLayout } from "../types/ui-schema";
-import { EditorState, getEditorState } from "../state/EditorState";
+import { EditorState, getEditorStateManager } from "../state/EditorState";
 
 export const PROPERTIES_VIEW_TYPE = "ui-properties-view";
+
+type StateEventCallback = (...args: unknown[]) => void;
 
 /**
  * Right panel - Property editor for selected node
  */
 export class PropertiesView extends ItemView {
-  private state: EditorState;
+  private state: EditorState | null = null;
   private contentContainer: HTMLElement | null = null;
+  private stateEventHandlers: Map<string, StateEventCallback> = new Map();
+  private activeStateChangedHandler: ((state: EditorState | null) => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf) {
     super(leaf);
-    this.state = getEditorState();
+  }
+
+  /**
+   * Subscribe to events on the current state
+   */
+  private subscribeToState(state: EditorState | null): void {
+    // Unsubscribe from old state
+    this.unsubscribeFromState();
+
+    this.state = state;
+
+    if (!state) {
+      this.refresh();
+      return;
+    }
+
+    // Create handlers
+    const refreshHandler = () => this.refresh();
+
+    // Store handlers for cleanup
+    this.stateEventHandlers.set("selection-changed", refreshHandler);
+    this.stateEventHandlers.set("node-updated", refreshHandler);
+
+    // Subscribe
+    state.on("selection-changed", refreshHandler);
+    state.on("node-updated", refreshHandler);
+
+    this.refresh();
+  }
+
+  /**
+   * Unsubscribe from current state's events
+   */
+  private unsubscribeFromState(): void {
+    if (!this.state) return;
+
+    for (const [event, handler] of this.stateEventHandlers) {
+      this.state.off(event, handler);
+    }
+    this.stateEventHandlers.clear();
   }
 
   getViewType(): string {
@@ -42,14 +85,27 @@ export class PropertiesView extends ItemView {
       cls: "ui-properties-content",
     });
 
-    // Listen for selection changes
-    this.state.on("selection-changed", () => this.refresh());
-    this.state.on("node-updated", () => this.refresh());
+    // Listen for active state changes from the manager
+    const manager = getEditorStateManager();
+    this.activeStateChangedHandler = (state: EditorState | null) => {
+      this.subscribeToState(state);
+    };
+    manager.on("active-state-changed", this.activeStateChangedHandler);
 
-    this.refresh();
+    // Subscribe to current active state
+    this.subscribeToState(manager.getActiveState());
   }
 
   async onClose(): Promise<void> {
+    // Unsubscribe from state events
+    this.unsubscribeFromState();
+
+    // Unsubscribe from manager events
+    if (this.activeStateChangedHandler) {
+      getEditorStateManager().off("active-state-changed", this.activeStateChangedHandler);
+      this.activeStateChangedHandler = null;
+    }
+
     this.contentContainer = null;
   }
 
@@ -57,7 +113,16 @@ export class PropertiesView extends ItemView {
     if (!this.contentContainer) return;
     this.contentContainer.empty();
 
-    const selectedNode = this.state.getSelectedNode();
+    const state = this.state;
+    if (!state) {
+      this.contentContainer.createSpan({
+        text: "No document loaded",
+        cls: "ui-properties-empty",
+      });
+      return;
+    }
+
+    const selectedNode = state.getSelectedNode();
 
     if (!selectedNode) {
       this.contentContainer.createSpan({
@@ -70,7 +135,7 @@ export class PropertiesView extends ItemView {
     // Node info section
     this.createSection("Node", this.contentContainer, (section) => {
       this.createTextField(section, "Name", selectedNode.name || "", (val) => {
-        this.state.updateNode(selectedNode.id, { name: val });
+        state.updateNode(selectedNode.id, { name: val });
       });
 
       this.createReadOnlyField(section, "Type", selectedNode.type);
@@ -82,19 +147,19 @@ export class PropertiesView extends ItemView {
       const absLayout = selectedNode.layout as AbsoluteLayout;
       this.createSection("Layout", this.contentContainer, (section) => {
         this.createNumberField(section, "X", absLayout.x, (val) => {
-          this.state.updateNodeLayout(selectedNode.id, { ...absLayout, x: val });
+          state.updateNodeLayout(selectedNode.id, { ...absLayout, x: val });
         });
 
         this.createNumberField(section, "Y", absLayout.y, (val) => {
-          this.state.updateNodeLayout(selectedNode.id, { ...absLayout, y: val });
+          state.updateNodeLayout(selectedNode.id, { ...absLayout, y: val });
         });
 
         this.createNumberField(section, "Width", absLayout.w, (val) => {
-          this.state.updateNodeLayout(selectedNode.id, { ...absLayout, w: val });
+          state.updateNodeLayout(selectedNode.id, { ...absLayout, w: val });
         });
 
         this.createNumberField(section, "Height", absLayout.h, (val) => {
-          this.state.updateNodeLayout(selectedNode.id, { ...absLayout, h: val });
+          state.updateNodeLayout(selectedNode.id, { ...absLayout, h: val });
         });
       });
     }
@@ -108,7 +173,7 @@ export class PropertiesView extends ItemView {
         "Background",
         style.background || "",
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, { background: val });
+          state.updateNodeStyle(selectedNode.id, { background: val });
         }
       );
 
@@ -117,7 +182,7 @@ export class PropertiesView extends ItemView {
         "Text Color",
         style.textColor || "",
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, { textColor: val });
+          state.updateNodeStyle(selectedNode.id, { textColor: val });
         }
       );
 
@@ -126,7 +191,7 @@ export class PropertiesView extends ItemView {
         "Border Color",
         style.borderColor || "",
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, { borderColor: val });
+          state.updateNodeStyle(selectedNode.id, { borderColor: val });
         }
       );
 
@@ -135,7 +200,7 @@ export class PropertiesView extends ItemView {
         "Border Width",
         style.borderWidth || 0,
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, { borderWidth: val });
+          state.updateNodeStyle(selectedNode.id, { borderWidth: val });
         }
       );
 
@@ -144,7 +209,7 @@ export class PropertiesView extends ItemView {
         "Border Radius",
         style.borderRadius || 0,
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, { borderRadius: val });
+          state.updateNodeStyle(selectedNode.id, { borderRadius: val });
         }
       );
 
@@ -153,7 +218,7 @@ export class PropertiesView extends ItemView {
         "Opacity",
         style.opacity !== undefined ? style.opacity : 1,
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, {
+          state.updateNodeStyle(selectedNode.id, {
             opacity: Math.min(1, Math.max(0, val)),
           });
         }
@@ -165,13 +230,13 @@ export class PropertiesView extends ItemView {
       const content = selectedNode.content || {};
 
       this.createTextField(section, "Text", content.text || "", (val) => {
-        this.state.updateNode(selectedNode.id, {
+        state.updateNode(selectedNode.id, {
           content: { ...content, text: val },
         });
       });
 
       this.createTextField(section, "Icon", content.icon || "", (val) => {
-        this.state.updateNode(selectedNode.id, {
+        state.updateNode(selectedNode.id, {
           content: { ...content, icon: val },
         });
       });
@@ -182,7 +247,7 @@ export class PropertiesView extends ItemView {
           "Placeholder",
           content.placeholder || "",
           (val) => {
-            this.state.updateNode(selectedNode.id, {
+            state.updateNode(selectedNode.id, {
               content: { ...content, placeholder: val },
             });
           }
@@ -191,7 +256,7 @@ export class PropertiesView extends ItemView {
 
       if (selectedNode.type === "Image") {
         this.createTextField(section, "Source", content.src || "", (val) => {
-          this.state.updateNode(selectedNode.id, {
+          state.updateNode(selectedNode.id, {
             content: { ...content, src: val },
           });
         });
@@ -203,7 +268,7 @@ export class PropertiesView extends ItemView {
       const meta = selectedNode.meta || {};
 
       this.createTextAreaField(section, "Purpose", meta.purpose || "", (val) => {
-        this.state.updateNode(selectedNode.id, {
+        state.updateNode(selectedNode.id, {
           meta: { ...meta, purpose: val },
         });
       });
@@ -213,7 +278,7 @@ export class PropertiesView extends ItemView {
         "Behavior",
         meta.behavior || "",
         (val) => {
-          this.state.updateNode(selectedNode.id, {
+          state.updateNode(selectedNode.id, {
             meta: { ...meta, behavior: val },
           });
         }
@@ -228,14 +293,14 @@ export class PropertiesView extends ItemView {
             .split(",")
             .map((s) => s.trim())
             .filter((s) => s);
-          this.state.updateNode(selectedNode.id, {
+          state.updateNode(selectedNode.id, {
             meta: { ...meta, states },
           });
         }
       );
 
       this.createTextAreaField(section, "Notes", meta.notes || "", (val) => {
-        this.state.updateNode(selectedNode.id, {
+        state.updateNode(selectedNode.id, {
           meta: { ...meta, notes: val },
         });
       });
@@ -249,7 +314,7 @@ export class PropertiesView extends ItemView {
             .split(",")
             .map((s) => s.trim())
             .filter((s) => s);
-          this.state.updateNode(selectedNode.id, {
+          state.updateNode(selectedNode.id, {
             meta: { ...meta, related },
           });
         }

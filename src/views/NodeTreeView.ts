@@ -1,19 +1,71 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { UINode } from "../types/ui-schema";
-import { EditorState, getEditorState } from "../state/EditorState";
+import { EditorState, getEditorStateManager } from "../state/EditorState";
 
 export const NODE_TREE_VIEW_TYPE = "ui-node-tree-view";
+
+type StateEventCallback = (...args: unknown[]) => void;
 
 /**
  * Left panel - Hierarchical tree view of all UI nodes
  */
 export class NodeTreeView extends ItemView {
-  private state: EditorState;
+  private state: EditorState | null = null;
   private treeContainer: HTMLElement | null = null;
+  private stateEventHandlers: Map<string, StateEventCallback> = new Map();
+  private activeStateChangedHandler: ((state: EditorState | null) => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf) {
     super(leaf);
-    this.state = getEditorState();
+  }
+
+  /**
+   * Subscribe to events on the current state
+   */
+  private subscribeToState(state: EditorState | null): void {
+    // Unsubscribe from old state
+    this.unsubscribeFromState();
+
+    this.state = state;
+
+    if (!state) {
+      this.refresh();
+      return;
+    }
+
+    // Create handlers
+    const refreshHandler = () => this.refresh();
+    const selectionHandler = () => this.updateSelection();
+
+    // Store handlers for cleanup
+    this.stateEventHandlers.set("document-loaded", refreshHandler);
+    this.stateEventHandlers.set("screen-changed", refreshHandler);
+    this.stateEventHandlers.set("node-added", refreshHandler);
+    this.stateEventHandlers.set("node-removed", refreshHandler);
+    this.stateEventHandlers.set("node-updated", refreshHandler);
+    this.stateEventHandlers.set("selection-changed", selectionHandler);
+
+    // Subscribe
+    state.on("document-loaded", refreshHandler);
+    state.on("screen-changed", refreshHandler);
+    state.on("node-added", refreshHandler);
+    state.on("node-removed", refreshHandler);
+    state.on("node-updated", refreshHandler);
+    state.on("selection-changed", selectionHandler);
+
+    this.refresh();
+  }
+
+  /**
+   * Unsubscribe from current state's events
+   */
+  private unsubscribeFromState(): void {
+    if (!this.state) return;
+
+    for (const [event, handler] of this.stateEventHandlers) {
+      this.state.off(event, handler);
+    }
+    this.stateEventHandlers.clear();
   }
 
   getViewType(): string {
@@ -40,24 +92,41 @@ export class NodeTreeView extends ItemView {
     // Tree container
     this.treeContainer = container.createDiv({ cls: "ui-node-tree-content" });
 
-    // Listen for state changes
-    this.state.on("document-loaded", () => this.refresh());
-    this.state.on("screen-changed", () => this.refresh());
-    this.state.on("node-added", () => this.refresh());
-    this.state.on("node-removed", () => this.refresh());
-    this.state.on("node-updated", () => this.refresh());
-    this.state.on("selection-changed", () => this.updateSelection());
+    // Listen for active state changes from the manager
+    const manager = getEditorStateManager();
+    this.activeStateChangedHandler = (state: EditorState | null) => {
+      this.subscribeToState(state);
+    };
+    manager.on("active-state-changed", this.activeStateChangedHandler);
 
-    this.refresh();
+    // Subscribe to current active state
+    this.subscribeToState(manager.getActiveState());
   }
 
   async onClose(): Promise<void> {
+    // Unsubscribe from state events
+    this.unsubscribeFromState();
+
+    // Unsubscribe from manager events
+    if (this.activeStateChangedHandler) {
+      getEditorStateManager().off("active-state-changed", this.activeStateChangedHandler);
+      this.activeStateChangedHandler = null;
+    }
+
     this.treeContainer = null;
   }
 
   private refresh(): void {
     if (!this.treeContainer) return;
     this.treeContainer.empty();
+
+    if (!this.state) {
+      this.treeContainer.createSpan({
+        text: "No document loaded",
+        cls: "ui-node-tree-empty",
+      });
+      return;
+    }
 
     const screen = this.state.getCurrentScreen();
     if (!screen) {
@@ -86,7 +155,7 @@ export class NodeTreeView extends ItemView {
       }
 
       screenSelect.addEventListener("change", () => {
-        this.state.setCurrentScreen(screenSelect.value);
+        this.state?.setCurrentScreen(screenSelect.value);
       });
     }
 
@@ -100,6 +169,8 @@ export class NodeTreeView extends ItemView {
     container: HTMLElement,
     depth: number
   ): void {
+    if (!this.state) return;
+
     const isSelected = this.state.isNodeSelected(node.id);
     const hasChildren = node.children && node.children.length > 0;
 
@@ -136,6 +207,7 @@ export class NodeTreeView extends ItemView {
 
     // Click to select
     nodeEl.addEventListener("click", (e) => {
+      if (!this.state) return;
       const addToSelection = e.shiftKey || e.ctrlKey || e.metaKey;
       if (addToSelection && this.state.isNodeSelected(node.id)) {
         this.state.deselectNode(node.id);
@@ -183,7 +255,7 @@ export class NodeTreeView extends ItemView {
   }
 
   private updateSelection(): void {
-    if (!this.treeContainer) return;
+    if (!this.treeContainer || !this.state) return;
 
     const selectedIds = new Set(this.state.getSelectedNodeIds());
 
