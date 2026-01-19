@@ -59,6 +59,127 @@ export default class UIDesignerPlugin extends Plugin {
       callback: () => this.activateView(PROPERTIES_VIEW_TYPE, "right"),
     });
 
+    // Clipboard commands
+    this.addCommand({
+      id: "copy-selection",
+      name: "Copy selected components",
+      editorCheckCallback: (checking, editor, view) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView) return false;
+
+        const interaction = uiView.getInteraction();
+        const hasSelection = getEditorState().getSelectedNodeIds().length > 0;
+
+        if (checking) {
+          return hasSelection;
+        }
+
+        if (interaction && hasSelection) {
+          interaction.copySelection();
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "cut-selection",
+      name: "Cut selected components",
+      editorCheckCallback: (checking, editor, view) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView) return false;
+
+        const interaction = uiView.getInteraction();
+        const hasSelection = getEditorState().getSelectedNodeIds().length > 0;
+
+        if (checking) {
+          return hasSelection;
+        }
+
+        if (interaction && hasSelection) {
+          interaction.cutSelection();
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "paste-components",
+      name: "Paste components",
+      editorCheckCallback: (checking, editor, view) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView) return false;
+
+        const interaction = uiView.getInteraction();
+
+        if (checking) {
+          return interaction?.hasClipboardContent() ?? false;
+        }
+
+        if (interaction) {
+          interaction.pasteAtCursor();
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "duplicate-selection",
+      name: "Duplicate selected components",
+      editorCheckCallback: (checking, editor, view) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView) return false;
+
+        const interaction = uiView.getInteraction();
+        const hasSelection = getEditorState().getSelectedNodeIds().length > 0;
+
+        if (checking) {
+          return hasSelection;
+        }
+
+        if (interaction && hasSelection) {
+          interaction.duplicateSelection();
+        }
+        return true;
+      },
+    });
+
+    // Undo/Redo commands
+    this.addCommand({
+      id: "undo",
+      name: "Undo",
+      editorCheckCallback: (checking, editor, view) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView) return false;
+
+        const state = getEditorState();
+
+        if (checking) {
+          return state.canUndo();
+        }
+
+        state.undo();
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "redo",
+      name: "Redo",
+      editorCheckCallback: (checking, editor, view) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView) return false;
+
+        const state = getEditorState();
+
+        if (checking) {
+          return state.canRedo();
+        }
+
+        state.redo();
+        return true;
+      },
+    });
+
     // When layout is ready, restore side panels if they were open
     this.app.workspace.onLayoutReady(() => {
       this.registerEvent(
@@ -202,5 +323,13 @@ export default class UIDesignerPlugin extends Plugin {
         await leftLeaf.setViewState({ type: NODE_TREE_VIEW_TYPE, active: true });
       }
     }
+  }
+
+  /**
+   * Get the active UI Editor view if one is open
+   */
+  private getActiveUIEditorView(): UIEditorView | null {
+    const activeView = this.app.workspace.getActiveViewOfType(UIEditorView);
+    return activeView;
   }
 }

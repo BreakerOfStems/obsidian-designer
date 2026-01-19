@@ -219,4 +219,11 @@ export class UIEditorView extends TextFileView {
         });
     });
   }
+
+  /**
+   * Get the canvas interaction handler for clipboard operations
+   */
+  getInteraction(): CanvasInteraction | null {
+    return this.interaction;
+  }
 }
