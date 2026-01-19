@@ -59,11 +59,12 @@ export default class UIDesignerPlugin extends Plugin {
       callback: () => this.activateView(PROPERTIES_VIEW_TYPE, "right"),
     });
 
-    // Clipboard commands
+    // Clipboard commands - use checkCallback for custom views
     this.addCommand({
       id: "copy-selection",
       name: "Copy selected components",
-      editorCheckCallback: (checking, editor, view) => {
+      hotkeys: [{ modifiers: ["Mod"], key: "c" }],
+      checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
 
@@ -84,7 +85,8 @@ export default class UIDesignerPlugin extends Plugin {
     this.addCommand({
       id: "cut-selection",
       name: "Cut selected components",
-      editorCheckCallback: (checking, editor, view) => {
+      hotkeys: [{ modifiers: ["Mod"], key: "x" }],
+      checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
 
@@ -105,7 +107,8 @@ export default class UIDesignerPlugin extends Plugin {
     this.addCommand({
       id: "paste-components",
       name: "Paste components",
-      editorCheckCallback: (checking, editor, view) => {
+      hotkeys: [{ modifiers: ["Mod"], key: "v" }],
+      checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
 
@@ -125,7 +128,8 @@ export default class UIDesignerPlugin extends Plugin {
     this.addCommand({
       id: "duplicate-selection",
       name: "Duplicate selected components",
-      editorCheckCallback: (checking, editor, view) => {
+      hotkeys: [{ modifiers: ["Mod"], key: "d" }],
+      checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
 
@@ -147,7 +151,8 @@ export default class UIDesignerPlugin extends Plugin {
     this.addCommand({
       id: "undo",
       name: "Undo",
-      editorCheckCallback: (checking, editor, view) => {
+      hotkeys: [{ modifiers: ["Mod"], key: "z" }],
+      checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
 
@@ -165,7 +170,11 @@ export default class UIDesignerPlugin extends Plugin {
     this.addCommand({
       id: "redo",
       name: "Redo",
-      editorCheckCallback: (checking, editor, view) => {
+      hotkeys: [
+        { modifiers: ["Mod", "Shift"], key: "z" },
+        { modifiers: ["Mod"], key: "y" },
+      ],
+      checkCallback: (checking) => {
         const uiView = this.getActiveUIEditorView();
         if (!uiView) return false;
 
