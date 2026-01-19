@@ -1,6 +1,7 @@
 import { EditorState } from "../state/EditorState";
 import { CanvasRenderer } from "./CanvasRenderer";
 import { createNode, NodeType } from "../types/ui-schema";
+import { ClipboardService } from "../clipboard/ClipboardService";
 
 type DragMode = "none" | "pan" | "move" | "resize";
 
@@ -27,6 +28,9 @@ export class CanvasInteraction {
   private drag: DragState;
   private snapEnabled: boolean = true;
   private snapSize: number = 10;
+  private clipboardService: ClipboardService;
+  private lastMouseX: number = 0;
+  private lastMouseY: number = 0;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -36,6 +40,7 @@ export class CanvasInteraction {
     this.canvas = canvas;
     this.state = state;
     this.renderer = renderer;
+    this.clipboardService = new ClipboardService(state);
 
     this.drag = {
       mode: "none",
@@ -125,6 +130,10 @@ export class CanvasInteraction {
 
   private onMouseMove(e: MouseEvent): void {
     const coords = this.getCanvasCoords(e);
+
+    // Track last mouse position for paste operations
+    this.lastMouseX = coords.x;
+    this.lastMouseY = coords.y;
 
     switch (this.drag.mode) {
       case "pan":
@@ -228,6 +237,59 @@ export class CanvasInteraction {
               this.state.selectNode(node.id, true);
             }
           }
+          e.preventDefault();
+        }
+        break;
+
+      case "c":
+        if (e.ctrlKey || e.metaKey) {
+          // Copy selected nodes
+          this.copySelection();
+          e.preventDefault();
+        }
+        break;
+
+      case "x":
+        if (e.ctrlKey || e.metaKey) {
+          // Cut selected nodes (copy then delete)
+          this.cutSelection();
+          e.preventDefault();
+        }
+        break;
+
+      case "v":
+        if (e.ctrlKey || e.metaKey) {
+          // Paste at cursor position
+          this.pasteAtCursor();
+          e.preventDefault();
+        }
+        break;
+
+      case "d":
+        if (e.ctrlKey || e.metaKey) {
+          // Duplicate selected nodes
+          this.duplicateSelection();
+          e.preventDefault();
+        }
+        break;
+
+      case "z":
+        if (e.ctrlKey || e.metaKey) {
+          if (e.shiftKey) {
+            // Redo
+            this.state.redo();
+          } else {
+            // Undo
+            this.state.undo();
+          }
+          e.preventDefault();
+        }
+        break;
+
+      case "y":
+        if (e.ctrlKey || e.metaKey) {
+          // Redo (alternative)
+          this.state.redo();
           e.preventDefault();
         }
         break;
@@ -435,6 +497,85 @@ export class CanvasInteraction {
 
     this.state.addNode(node);
     this.state.selectNode(node.id);
+  }
+
+  // Clipboard operations
+
+  /**
+   * Copy selected nodes to clipboard
+   * Returns true if any nodes were copied
+   */
+  copySelection(): boolean {
+    return this.clipboardService.copy();
+  }
+
+  /**
+   * Cut selected nodes (copy then delete)
+   * Returns true if any nodes were cut
+   */
+  cutSelection(): boolean {
+    const selectedIds = this.state.getSelectedNodeIds();
+    if (selectedIds.length === 0) {
+      return false;
+    }
+
+    // Copy first
+    if (!this.clipboardService.copy()) {
+      return false;
+    }
+
+    // Then delete the selected nodes
+    for (const id of selectedIds) {
+      const node = this.state.findNodeById(id);
+      if (node && node.id !== "root") {
+        this.state.removeNode(id);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Paste nodes at the current cursor position
+   * Returns array of pasted node IDs, or null if paste failed
+   */
+  pasteAtCursor(): string[] | null {
+    // Convert screen coordinates to world coordinates
+    const viewport = this.state.getViewport();
+    const worldX = (this.lastMouseX - viewport.panX) / viewport.zoom;
+    const worldY = (this.lastMouseY - viewport.panY) / viewport.zoom;
+
+    return this.clipboardService.paste(worldX, worldY);
+  }
+
+  /**
+   * Paste nodes at a specific world position
+   * Returns array of pasted node IDs, or null if paste failed
+   */
+  pasteAtPosition(worldX: number, worldY: number): string[] | null {
+    return this.clipboardService.paste(worldX, worldY);
+  }
+
+  /**
+   * Duplicate selected nodes with a fixed offset
+   * Returns array of duplicated node IDs, or null if duplication failed
+   */
+  duplicateSelection(): string[] | null {
+    return this.clipboardService.duplicate();
+  }
+
+  /**
+   * Check if clipboard has content
+   */
+  hasClipboardContent(): boolean {
+    return this.clipboardService.hasContent();
+  }
+
+  /**
+   * Get the clipboard service for external access
+   */
+  getClipboardService(): ClipboardService {
+    return this.clipboardService;
   }
 
   destroy(): void {

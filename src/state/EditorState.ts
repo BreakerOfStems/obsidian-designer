@@ -5,6 +5,7 @@ import {
   Screen,
   createEmptyDocument,
 } from "../types/ui-schema";
+import { HistoryManager } from "./HistoryManager";
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -31,6 +32,7 @@ export interface EditorStateData {
 export class EditorState {
   private data: EditorStateData;
   private listeners: Map<string, Set<EventCallback>>;
+  private historyManager: HistoryManager;
 
   constructor() {
     this.data = {
@@ -43,6 +45,7 @@ export class EditorState {
       isDirty: false,
     };
     this.listeners = new Map();
+    this.historyManager = new HistoryManager(this);
   }
 
   // Event emitter methods
@@ -310,9 +313,39 @@ export class EditorState {
     return JSON.stringify(this.data.document, null, 2);
   }
 
+  // History management
+  getHistoryManager(): HistoryManager {
+    return this.historyManager;
+  }
+
+  undo(): boolean {
+    const result = this.historyManager.undo();
+    if (result) {
+      this.emit("history-changed");
+    }
+    return result;
+  }
+
+  redo(): boolean {
+    const result = this.historyManager.redo();
+    if (result) {
+      this.emit("history-changed");
+    }
+    return result;
+  }
+
+  canUndo(): boolean {
+    return this.historyManager.canUndo();
+  }
+
+  canRedo(): boolean {
+    return this.historyManager.canRedo();
+  }
+
   // Cleanup
   destroy(): void {
     this.listeners.clear();
+    this.historyManager.clear();
     this.data.document = null;
     this.data.file = null;
   }
