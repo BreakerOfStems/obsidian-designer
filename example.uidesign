@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "schemaVersion": "1.1",
   "name": "Login Screen",
   "description": "Example login screen design with responsive constraints and design tokens",
   "tokens": {

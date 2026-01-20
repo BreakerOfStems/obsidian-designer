@@ -1,8 +1,14 @@
-import { TextFileView, WorkspaceLeaf, Menu } from "obsidian";
+import { TextFileView, WorkspaceLeaf, Menu, Notice } from "obsidian";
 import { UIDocument, NodeType } from "../types/ui-schema";
 import { EditorState, getEditorStateManager } from "../state/EditorState";
 import { CanvasRenderer } from "../canvas/CanvasRenderer";
 import { CanvasInteraction } from "../canvas/CanvasInteraction";
+import {
+  migrateDocument,
+  needsMigration,
+  getDocumentVersion,
+  CURRENT_SCHEMA_VERSION,
+} from "../migrations";
 
 export const UI_EDITOR_VIEW_TYPE = "ui-editor-view";
 
@@ -233,11 +239,48 @@ export class UIEditorView extends TextFileView {
       if (!data || data.trim() === "") {
         doc = state.createNewDocument(this.file?.basename);
       } else {
-        doc = JSON.parse(data);
+        const parsed = JSON.parse(data);
 
+        // Check if migration is needed and apply it
+        if (needsMigration(parsed)) {
+          const originalVersion = getDocumentVersion(parsed);
+          const result = migrateDocument(parsed);
+
+          if (result.success) {
+            doc = result.document;
+            // Notify user about automatic migration
+            if (result.migrationsApplied.length > 0) {
+              new Notice(
+                `UI Design upgraded from v${originalVersion} to v${CURRENT_SCHEMA_VERSION}`,
+                5000
+              );
+              console.log(
+                "UI Design migration applied:",
+                result.migrationsApplied
+              );
+            }
+          } else {
+            // Migration failed - log errors but try to load document anyway
+            console.error("UI Design migration errors:", result.errors);
+            new Notice(
+              `Warning: Schema migration had errors. See console for details.`,
+              5000
+            );
+            doc = result.document;
+          }
+        } else {
+          doc = parsed as UIDocument;
+        }
+
+        // Ensure required fields exist (backwards compatibility)
         if (!doc.tokens) doc.tokens = {};
         if (!doc.components) doc.components = {};
         if (!doc.screens) doc.screens = {};
+
+        // Ensure schemaVersion is set
+        if (!doc.schemaVersion) {
+          doc.schemaVersion = CURRENT_SCHEMA_VERSION;
+        }
 
         if (Object.keys(doc.screens).length === 0) {
           doc.screens["main"] = {
