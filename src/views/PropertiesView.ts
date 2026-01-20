@@ -1,5 +1,5 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
-import { UINode, NodeStyle, NodeMeta, NodeContent, AbsoluteLayout, AnchoredLayout, DesignTokens, getTokensByCategory } from "../types/ui-schema";
+import { UINode, NodeStyle, NodeMeta, NodeContent, AbsoluteLayout, AnchoredLayout, DesignTokens, getTokensByCategory, ElementRole, ELEMENT_ROLES, getDefaultMeta, A11yMeta } from "../types/ui-schema";
 import { EditorState, getEditorStateManager } from "../state/EditorState";
 
 export const PROPERTIES_VIEW_TYPE = "ui-properties-view";
@@ -434,10 +434,45 @@ export class PropertiesView extends ItemView {
     this.createSection("Meta", this.contentContainer, (section) => {
       const meta = selectedNode.meta || {};
 
+      // Role dropdown
+      this.createSelectField(
+        section,
+        "Role",
+        meta.role || "custom",
+        ELEMENT_ROLES.map(r => ({ value: r.value, label: r.label })),
+        (val) => {
+          state.updateNode(selectedNode.id, {
+            meta: { ...meta, role: val as ElementRole, autofilled: false },
+          }, "Set element role");
+        }
+      );
+
+      // Template info (read-only)
+      if (meta.templateVersion) {
+        this.createReadOnlyField(section, "Template Ver", meta.templateVersion);
+      }
+      this.createReadOnlyField(
+        section,
+        "Auto-filled",
+        meta.autofilled ? "Yes" : "No"
+      );
+
+      // Reset to template button
+      this.createButtonField(
+        section,
+        "Reset to default template",
+        () => {
+          const defaultMeta = getDefaultMeta(selectedNode.type);
+          state.updateNode(selectedNode.id, {
+            meta: defaultMeta,
+          }, "Reset meta to template defaults");
+        }
+      );
+
       this.createTextAreaField(section, "Purpose", meta.purpose || "", (val) => {
         state.updateNode(selectedNode.id, {
-          meta: { ...meta, purpose: val },
-        });
+          meta: { ...meta, purpose: val, autofilled: false },
+        }, "Set element purpose");
       });
 
       this.createTextAreaField(
@@ -446,8 +481,8 @@ export class PropertiesView extends ItemView {
         meta.behavior || "",
         (val) => {
           state.updateNode(selectedNode.id, {
-            meta: { ...meta, behavior: val },
-          });
+            meta: { ...meta, behavior: val, autofilled: false },
+          }, "Set element behavior");
         }
       );
 
@@ -461,15 +496,15 @@ export class PropertiesView extends ItemView {
             .map((s) => s.trim())
             .filter((s) => s);
           state.updateNode(selectedNode.id, {
-            meta: { ...meta, states },
-          });
+            meta: { ...meta, states, autofilled: false },
+          }, "Set element states");
         }
       );
 
       this.createTextAreaField(section, "Notes", meta.notes || "", (val) => {
         state.updateNode(selectedNode.id, {
           meta: { ...meta, notes: val },
-        });
+        }, "Set element notes");
       });
 
       this.createTextField(
@@ -483,7 +518,63 @@ export class PropertiesView extends ItemView {
             .filter((s) => s);
           state.updateNode(selectedNode.id, {
             meta: { ...meta, related },
-          });
+          }, "Set related elements");
+        }
+      );
+    });
+
+    // Accessibility section
+    this.createSection("Accessibility", this.contentContainer, (section) => {
+      const meta = selectedNode.meta || {};
+      const a11y = meta.a11y || {};
+
+      this.createTextField(
+        section,
+        "Label",
+        a11y.label || "",
+        (val) => {
+          state.updateNode(selectedNode.id, {
+            meta: { ...meta, a11y: { ...a11y, label: val }, autofilled: false },
+          }, "Set accessibility label");
+        }
+      );
+
+      this.createTextField(
+        section,
+        "Hint",
+        a11y.hint || "",
+        (val) => {
+          state.updateNode(selectedNode.id, {
+            meta: { ...meta, a11y: { ...a11y, hint: val }, autofilled: false },
+          }, "Set accessibility hint");
+        }
+      );
+
+      this.createTextField(
+        section,
+        "ARIA Role",
+        a11y.role || "",
+        (val) => {
+          state.updateNode(selectedNode.id, {
+            meta: { ...meta, a11y: { ...a11y, role: val || undefined }, autofilled: false },
+          }, "Set ARIA role");
+        }
+      );
+
+      this.createSelectField(
+        section,
+        "Live Region",
+        a11y.live || "off",
+        [
+          { value: "off", label: "Off" },
+          { value: "polite", label: "Polite" },
+          { value: "assertive", label: "Assertive" },
+        ],
+        (val) => {
+          const liveValue = val === "off" ? undefined : val as "polite" | "assertive";
+          state.updateNode(selectedNode.id, {
+            meta: { ...meta, a11y: { ...a11y, live: liveValue }, autofilled: false },
+          }, "Set live region");
         }
       );
     });
@@ -631,6 +722,19 @@ export class PropertiesView extends ItemView {
     const row = parent.createDiv({ cls: "ui-properties-row" });
     row.createSpan({ text: label, cls: "ui-properties-label" });
     row.createSpan({ text: value, cls: "ui-properties-value-readonly" });
+  }
+
+  private createButtonField(
+    parent: HTMLElement,
+    label: string,
+    onClick: () => void
+  ): void {
+    const row = parent.createDiv({ cls: "ui-properties-row ui-properties-row-button" });
+    const button = row.createEl("button", {
+      text: label,
+      cls: "ui-properties-button",
+    });
+    button.addEventListener("click", onClick);
   }
 
   private createSelectField(
