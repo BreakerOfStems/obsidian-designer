@@ -99,8 +99,52 @@ export interface NodeContent {
   src?: string; // for images
 }
 
+// Element roles describe the semantic purpose of UI elements
+// These roles help with accessibility and LLM reproduction
+export type ElementRole =
+  | "primary-action"      // Main call-to-action (e.g., submit, confirm)
+  | "secondary-action"    // Supporting action (e.g., cancel, back)
+  | "destructive-action"  // Dangerous action (e.g., delete, remove)
+  | "navigation"          // Navigation element (e.g., link, menu item)
+  | "form-input"          // Form input field
+  | "form-label"          // Label for form input
+  | "heading"             // Section or page heading
+  | "body-text"           // Regular content text
+  | "caption"             // Supporting or descriptive text
+  | "status"              // Status indicator (e.g., badge, tag)
+  | "media"               // Image, video, or other media
+  | "container"           // Layout container
+  | "list"                // List container
+  | "list-item"           // Item within a list
+  | "card"                // Card container
+  | "modal"               // Modal/dialog container
+  | "header"              // Page or section header
+  | "footer"              // Page or section footer
+  | "sidebar"             // Sidebar container
+  | "divider"             // Visual separator
+  | "spacer"              // Spacing element
+  | "icon"                // Decorative or functional icon
+  | "custom";             // Custom role
+
+// Accessibility metadata for UI elements
+export interface A11yMeta {
+  label?: string;         // Accessible label (aria-label)
+  hint?: string;          // Accessible description (aria-describedby)
+  role?: string;          // ARIA role override
+  live?: "off" | "polite" | "assertive";  // Live region announcement
+}
+
 // Meta describes intent and behavior, not appearance
 export interface NodeMeta {
+  // Semantic role of the element
+  role?: ElementRole;
+  // Template versioning for tracking auto-generated content
+  templateVersion?: string;
+  // Whether this meta was auto-filled by a template
+  autofilled?: boolean;
+  // Accessibility metadata
+  a11y?: A11yMeta;
+  // Intent and behavior documentation
   purpose?: string;
   behavior?: string;
   states?: string[];
@@ -173,6 +217,203 @@ export interface UIDocument {
   components: { [id: string]: ComponentDefinition };
   screens: { [id: string]: Screen };
 }
+
+// Current template version for auto-generated meta
+export const META_TEMPLATE_VERSION = "1.0";
+
+// Default meta templates per node type
+// These templates provide useful defaults without manual typing
+export interface MetaTemplate {
+  role: ElementRole;
+  purpose: string;
+  behavior: string;
+  states: string[];
+  a11y: A11yMeta;
+}
+
+export const DEFAULT_META_TEMPLATES: Record<NodeType, MetaTemplate> = {
+  Button: {
+    role: "primary-action",
+    purpose: "Triggers an action when clicked",
+    behavior: "Responds to click/tap events; shows hover/focus states",
+    states: ["default", "hover", "focus", "active", "disabled"],
+    a11y: { label: "Button", hint: "Click to perform action" },
+  },
+  Text: {
+    role: "body-text",
+    purpose: "Displays text content to the user",
+    behavior: "Static text display; may support selection",
+    states: ["default"],
+    a11y: { label: "", hint: "" },
+  },
+  Input: {
+    role: "form-input",
+    purpose: "Accepts user text input",
+    behavior: "Receives keyboard input; validates on blur or submit",
+    states: ["default", "focus", "filled", "error", "disabled"],
+    a11y: { label: "Input field", hint: "Enter text" },
+  },
+  Container: {
+    role: "container",
+    purpose: "Groups and organizes child elements",
+    behavior: "Layout container; no direct user interaction",
+    states: ["default"],
+    a11y: { label: "", hint: "" },
+  },
+  Image: {
+    role: "media",
+    purpose: "Displays visual media content",
+    behavior: "Renders image from source; may support loading states",
+    states: ["loading", "loaded", "error"],
+    a11y: { label: "Image", hint: "" },
+  },
+  Icon: {
+    role: "icon",
+    purpose: "Displays a symbolic icon",
+    behavior: "Decorative or functional indicator; may be interactive",
+    states: ["default"],
+    a11y: { label: "Icon", hint: "" },
+  },
+  Divider: {
+    role: "divider",
+    purpose: "Visually separates content sections",
+    behavior: "Static visual separator; no interaction",
+    states: ["default"],
+    a11y: { role: "separator", label: "", hint: "" },
+  },
+  Spacer: {
+    role: "spacer",
+    purpose: "Creates empty space between elements",
+    behavior: "Invisible spacing element; no interaction",
+    states: ["default"],
+    a11y: { label: "", hint: "" },
+  },
+  Card: {
+    role: "card",
+    purpose: "Groups related content in a contained unit",
+    behavior: "May be interactive (clickable) or static",
+    states: ["default", "hover", "selected"],
+    a11y: { label: "Card", hint: "" },
+  },
+  List: {
+    role: "list",
+    purpose: "Displays a collection of items",
+    behavior: "Container for list items; may support selection",
+    states: ["default", "empty", "loading"],
+    a11y: { role: "list", label: "List", hint: "" },
+  },
+  ListItem: {
+    role: "list-item",
+    purpose: "Individual item within a list",
+    behavior: "May be selectable or interactive",
+    states: ["default", "hover", "selected", "disabled"],
+    a11y: { role: "listitem", label: "List item", hint: "" },
+  },
+  Header: {
+    role: "header",
+    purpose: "Top section of a page or component",
+    behavior: "Contains navigation, branding, or actions",
+    states: ["default"],
+    a11y: { role: "banner", label: "Header", hint: "" },
+  },
+  Footer: {
+    role: "footer",
+    purpose: "Bottom section of a page or component",
+    behavior: "Contains secondary navigation or information",
+    states: ["default"],
+    a11y: { role: "contentinfo", label: "Footer", hint: "" },
+  },
+  Sidebar: {
+    role: "sidebar",
+    purpose: "Side panel for navigation or tools",
+    behavior: "May be collapsible or fixed",
+    states: ["default", "collapsed", "expanded"],
+    a11y: { role: "complementary", label: "Sidebar", hint: "" },
+  },
+  Modal: {
+    role: "modal",
+    purpose: "Overlay dialog for focused interaction",
+    behavior: "Traps focus; dismissible via close button or backdrop",
+    states: ["default", "opening", "closing"],
+    a11y: { role: "dialog", label: "Dialog", hint: "Press Escape to close" },
+  },
+  Custom: {
+    role: "custom",
+    purpose: "Custom element with user-defined purpose",
+    behavior: "Behavior defined by implementation",
+    states: ["default"],
+    a11y: { label: "", hint: "" },
+  },
+};
+
+// Get default meta for a node type, with auto-filled flag set
+export function getDefaultMeta(type: NodeType): NodeMeta {
+  const template = DEFAULT_META_TEMPLATES[type];
+  return {
+    role: template.role,
+    templateVersion: META_TEMPLATE_VERSION,
+    autofilled: true,
+    a11y: { ...template.a11y },
+    purpose: template.purpose,
+    behavior: template.behavior,
+    states: [...template.states],
+  };
+}
+
+// Get default meta for a specific role (independent of node type)
+export function getDefaultMetaForRole(role: ElementRole): Partial<NodeMeta> {
+  // Find a template that uses this role, or create generic defaults
+  for (const template of Object.values(DEFAULT_META_TEMPLATES)) {
+    if (template.role === role) {
+      return {
+        role,
+        templateVersion: META_TEMPLATE_VERSION,
+        autofilled: true,
+        a11y: { ...template.a11y },
+        purpose: template.purpose,
+        behavior: template.behavior,
+        states: [...template.states],
+      };
+    }
+  }
+  // Fallback for roles not in templates
+  return {
+    role,
+    templateVersion: META_TEMPLATE_VERSION,
+    autofilled: true,
+    a11y: { label: "", hint: "" },
+    purpose: "",
+    behavior: "",
+    states: ["default"],
+  };
+}
+
+// All available element roles for UI selection
+export const ELEMENT_ROLES: { value: ElementRole; label: string }[] = [
+  { value: "primary-action", label: "Primary Action" },
+  { value: "secondary-action", label: "Secondary Action" },
+  { value: "destructive-action", label: "Destructive Action" },
+  { value: "navigation", label: "Navigation" },
+  { value: "form-input", label: "Form Input" },
+  { value: "form-label", label: "Form Label" },
+  { value: "heading", label: "Heading" },
+  { value: "body-text", label: "Body Text" },
+  { value: "caption", label: "Caption" },
+  { value: "status", label: "Status" },
+  { value: "media", label: "Media" },
+  { value: "container", label: "Container" },
+  { value: "list", label: "List" },
+  { value: "list-item", label: "List Item" },
+  { value: "card", label: "Card" },
+  { value: "modal", label: "Modal" },
+  { value: "header", label: "Header" },
+  { value: "footer", label: "Footer" },
+  { value: "sidebar", label: "Sidebar" },
+  { value: "divider", label: "Divider" },
+  { value: "spacer", label: "Spacer" },
+  { value: "icon", label: "Icon" },
+  { value: "custom", label: "Custom" },
+];
 
 // Helper to create empty document
 export function createEmptyDocument(name?: string): UIDocument {
@@ -276,7 +517,7 @@ export function createNode(
     content: {
       text: type === "Button" ? "Button" : type === "Text" ? "Text" : undefined,
     },
-    meta: {},
+    meta: getDefaultMeta(type),
   };
 
   return { ...baseNode, ...overrides };
