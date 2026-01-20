@@ -2,6 +2,7 @@ import { Plugin, WorkspaceLeaf } from "obsidian";
 import { UIEditorView, UI_EDITOR_VIEW_TYPE } from "./views/UIEditorView";
 import { NodeTreeView, NODE_TREE_VIEW_TYPE } from "./views/NodeTreeView";
 import { PropertiesView, PROPERTIES_VIEW_TYPE } from "./views/PropertiesView";
+import { TokenBrowserView, TOKEN_BROWSER_VIEW_TYPE } from "./views/TokenBrowserView";
 import { getEditorStateManager, resetEditorStateManager } from "./state/EditorState";
 import { UIDocument } from "./types/ui-schema";
 
@@ -21,6 +22,11 @@ export default class UIDesignerPlugin extends Plugin {
     this.registerView(
       PROPERTIES_VIEW_TYPE,
       (leaf) => new PropertiesView(leaf)
+    );
+
+    this.registerView(
+      TOKEN_BROWSER_VIEW_TYPE,
+      (leaf) => new TokenBrowserView(leaf)
     );
 
     // Register .uidesign file extension
@@ -50,6 +56,12 @@ export default class UIDesignerPlugin extends Plugin {
       id: "open-properties",
       name: "Open properties panel",
       callback: () => this.activateView(PROPERTIES_VIEW_TYPE, "right"),
+    });
+
+    this.addCommand({
+      id: "open-token-browser",
+      name: "Open token browser panel",
+      callback: () => this.activateView(TOKEN_BROWSER_VIEW_TYPE, "right"),
     });
 
     // Clipboard commands - use checkCallback for custom views
@@ -209,6 +221,7 @@ export default class UIDesignerPlugin extends Plugin {
     this.app.workspace.detachLeavesOfType(UI_EDITOR_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(NODE_TREE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(PROPERTIES_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(TOKEN_BROWSER_VIEW_TYPE);
   }
 
   private async createNewUIFile(): Promise<void> {
@@ -232,16 +245,43 @@ export default class UIDesignerPlugin extends Plugin {
       version: "1.0",
       name: "Untitled Design",
       tokens: {
+        // Color tokens
         "color.primary": "#2E6BE6",
         "color.secondary": "#6B7280",
         "color.background": "#FFFFFF",
         "color.surface": "#F3F4F6",
         "color.text": "#1F2937",
+        "color.textMuted": "#6B7280",
+        "color.error": "#EF4444",
+        "color.success": "#10B981",
+        // Spacing tokens
+        "space.xs": 4,
         "space.sm": 8,
         "space.md": 16,
         "space.lg": 24,
+        "space.xl": 32,
+        // Radius tokens
+        "radius.none": 0,
         "radius.sm": 4,
         "radius.md": 8,
+        "radius.lg": 12,
+        "radius.full": 9999,
+        // Typography tokens
+        "type.font.body": "Inter, system-ui, sans-serif",
+        "type.font.heading": "Inter, system-ui, sans-serif",
+        "type.size.sm": 14,
+        "type.size.md": 16,
+        "type.size.lg": 18,
+        "type.size.xl": 24,
+        "type.weight.normal": 400,
+        "type.weight.medium": 500,
+        "type.weight.bold": 700,
+        "type.lineHeight.normal": 1.5,
+        // Elevation tokens
+        "elevation.none": "none",
+        "elevation.sm": "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+        "elevation.md": "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+        "elevation.lg": "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
       },
       components: {},
       screens: {

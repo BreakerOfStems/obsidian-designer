@@ -284,6 +284,29 @@ export class EditorState {
     this.emit("node-updated", nodeId, { style: node.style });
   }
 
+  // Token management
+  updateToken(key: string, value: string | number, description: string = "Update token"): void {
+    if (!this.data.document) return;
+
+    this.data.document.tokens[key] = value;
+    this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
+    this.emit("tokens-changed", key, value);
+    // Also trigger node-updated to refresh canvas with new token values
+    this.emit("node-updated", null, {});
+  }
+
+  deleteToken(key: string, description: string = "Delete token"): void {
+    if (!this.data.document) return;
+
+    delete this.data.document.tokens[key];
+    this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
+    this.emit("tokens-changed", key, undefined);
+    // Also trigger node-updated to refresh canvas
+    this.emit("node-updated", null, {});
+  }
+
   addNode(node: UINode, parentId?: string, description: string = "Add node"): void {
     const parent = parentId
       ? this.findNodeById(parentId)

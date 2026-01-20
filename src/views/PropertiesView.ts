@@ -1,5 +1,5 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
-import { UINode, NodeStyle, NodeMeta, NodeContent, AbsoluteLayout, AnchoredLayout } from "../types/ui-schema";
+import { UINode, NodeStyle, NodeMeta, NodeContent, AbsoluteLayout, AnchoredLayout, DesignTokens, getTokensByCategory } from "../types/ui-schema";
 import { EditorState, getEditorStateManager } from "../state/EditorState";
 
 export const PROPERTIES_VIEW_TYPE = "ui-properties-view";
@@ -252,6 +252,10 @@ export class PropertiesView extends ItemView {
       }
     });
 
+    // Get tokens for dropdowns
+    const doc = state.getDocument();
+    const tokens = doc?.tokens || {};
+
     // Style section
     this.createSection("Style", this.contentContainer, (section) => {
       const style = selectedNode.style || {};
@@ -283,19 +287,23 @@ export class PropertiesView extends ItemView {
         }
       );
 
-      this.createNumberField(
+      this.createTokenOrNumberField(
         section,
         "Border Width",
-        style.borderWidth || 0,
+        style.borderWidth,
+        tokens,
+        "space",
         (val) => {
           state.updateNodeStyle(selectedNode.id, { borderWidth: val });
         }
       );
 
-      this.createNumberField(
+      this.createTokenOrNumberField(
         section,
         "Border Radius",
-        style.borderRadius || 0,
+        style.borderRadius,
+        tokens,
+        "radius",
         (val) => {
           state.updateNodeStyle(selectedNode.id, { borderRadius: val });
         }
@@ -309,6 +317,77 @@ export class PropertiesView extends ItemView {
           state.updateNodeStyle(selectedNode.id, {
             opacity: Math.min(1, Math.max(0, val)),
           });
+        }
+      );
+
+      this.createTokenField(
+        section,
+        "Shadow",
+        style.shadow || "",
+        tokens,
+        "elevation",
+        (val) => {
+          state.updateNodeStyle(selectedNode.id, { shadow: val });
+        }
+      );
+
+      this.createTokenOrNumberField(
+        section,
+        "Padding",
+        style.padding,
+        tokens,
+        "space",
+        (val) => {
+          state.updateNodeStyle(selectedNode.id, { padding: val });
+        }
+      );
+    });
+
+    // Typography section
+    this.createSection("Typography", this.contentContainer, (section) => {
+      const style = selectedNode.style || {};
+
+      this.createTokenField(
+        section,
+        "Font Family",
+        String(style.fontFamily || ""),
+        tokens,
+        "type.font",
+        (val) => {
+          state.updateNodeStyle(selectedNode.id, { fontFamily: val });
+        }
+      );
+
+      this.createTokenOrNumberField(
+        section,
+        "Font Size",
+        style.fontSize,
+        tokens,
+        "type.size",
+        (val) => {
+          state.updateNodeStyle(selectedNode.id, { fontSize: val });
+        }
+      );
+
+      this.createTokenOrNumberField(
+        section,
+        "Font Weight",
+        style.fontWeight,
+        tokens,
+        "type.weight",
+        (val) => {
+          state.updateNodeStyle(selectedNode.id, { fontWeight: val });
+        }
+      );
+
+      this.createTokenOrNumberField(
+        section,
+        "Line Height",
+        style.lineHeight,
+        tokens,
+        "type.lineHeight",
+        (val) => {
+          state.updateNodeStyle(selectedNode.id, { lineHeight: val });
         }
       );
     });
@@ -629,5 +708,161 @@ export class PropertiesView extends ItemView {
 
     inputX.addEventListener("change", handleChange);
     inputY.addEventListener("change", handleChange);
+  }
+
+  /**
+   * Create a field that allows selecting from token values or entering a custom string
+   */
+  private createTokenField(
+    parent: HTMLElement,
+    label: string,
+    value: string,
+    tokens: DesignTokens,
+    tokenCategory: string,
+    onChange: (value: string) => void
+  ): void {
+    const row = parent.createDiv({ cls: "ui-properties-row" });
+    row.createSpan({ text: label, cls: "ui-properties-label" });
+
+    const inputGroup = row.createDiv({ cls: "ui-properties-token-group" });
+
+    // Get tokens for this category
+    const categoryTokens = getTokensByCategory(tokens, tokenCategory);
+    const tokenKeys = Object.keys(categoryTokens);
+
+    // Dropdown for token selection
+    const select = inputGroup.createEl("select", {
+      cls: "ui-properties-select ui-properties-token-select",
+    });
+
+    // Add "Custom" option
+    select.createEl("option", { value: "", text: "Custom" });
+
+    // Add token options
+    for (const key of tokenKeys) {
+      const tokenValue = categoryTokens[key];
+      const displayValue = typeof tokenValue === "string"
+        ? (tokenValue.length > 20 ? tokenValue.substring(0, 20) + "..." : tokenValue)
+        : tokenValue;
+      const optEl = select.createEl("option", {
+        value: key,
+        text: `${key.split(".").pop()} (${displayValue})`,
+      });
+      if (key === value) {
+        optEl.selected = true;
+      }
+    }
+
+    // Text input for custom value
+    const textInput = inputGroup.createEl("input", {
+      type: "text",
+      value: value,
+      cls: "ui-properties-input ui-properties-token-text",
+      attr: { placeholder: "Token or value" },
+    });
+
+    // If value matches a token, select it
+    if (tokenKeys.includes(value)) {
+      select.value = value;
+    }
+
+    select.addEventListener("change", () => {
+      if (select.value) {
+        textInput.value = select.value;
+        onChange(select.value);
+      }
+    });
+
+    textInput.addEventListener("change", () => {
+      // Update select if it matches a token
+      if (tokenKeys.includes(textInput.value)) {
+        select.value = textInput.value;
+      } else {
+        select.value = "";
+      }
+      onChange(textInput.value);
+    });
+  }
+
+  /**
+   * Create a field that allows selecting from token values or entering a number
+   */
+  private createTokenOrNumberField(
+    parent: HTMLElement,
+    label: string,
+    value: string | number | undefined,
+    tokens: DesignTokens,
+    tokenCategory: string,
+    onChange: (value: string | number) => void
+  ): void {
+    const row = parent.createDiv({ cls: "ui-properties-row" });
+    row.createSpan({ text: label, cls: "ui-properties-label" });
+
+    const inputGroup = row.createDiv({ cls: "ui-properties-token-group" });
+
+    // Get tokens for this category
+    const categoryTokens = getTokensByCategory(tokens, tokenCategory);
+    const tokenKeys = Object.keys(categoryTokens);
+
+    // Dropdown for token selection
+    const select = inputGroup.createEl("select", {
+      cls: "ui-properties-select ui-properties-token-select",
+    });
+
+    // Add "Custom" option
+    select.createEl("option", { value: "__custom__", text: "Custom" });
+
+    // Add token options
+    for (const key of tokenKeys) {
+      const tokenValue = categoryTokens[key];
+      const optEl = select.createEl("option", {
+        value: key,
+        text: `${key.split(".").pop()} (${tokenValue})`,
+      });
+      if (key === value) {
+        optEl.selected = true;
+      }
+    }
+
+    // Number input for custom value
+    const numInput = inputGroup.createEl("input", {
+      type: "text",
+      value: value !== undefined ? String(value) : "",
+      cls: "ui-properties-input ui-properties-token-number",
+      attr: { placeholder: "Token or number" },
+    });
+
+    // If value matches a token, select it
+    if (typeof value === "string" && tokenKeys.includes(value)) {
+      select.value = value;
+    } else {
+      select.value = "__custom__";
+    }
+
+    select.addEventListener("change", () => {
+      if (select.value !== "__custom__") {
+        numInput.value = select.value;
+        onChange(select.value);
+      }
+    });
+
+    numInput.addEventListener("change", () => {
+      const val = numInput.value;
+      // Check if it's a token reference
+      if (tokenKeys.includes(val)) {
+        select.value = val;
+        onChange(val);
+      } else {
+        // Try to parse as number
+        const num = parseFloat(val);
+        select.value = "__custom__";
+        if (!isNaN(num)) {
+          onChange(num);
+        } else if (val) {
+          // Keep as string (might be a token reference user typed)
+          onChange(val);
+        }
+      }
+    });
   }
 }

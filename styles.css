@@ -347,3 +347,354 @@
   flex: 1;
   min-width: 0;
 }
+
+/* Token-aware property fields */
+.ui-properties-token-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.ui-properties-token-select {
+  flex: 0 0 100px;
+  padding: 4px;
+  font-size: 11px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-normal);
+}
+
+.ui-properties-token-text,
+.ui-properties-token-number {
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-properties-select {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-normal);
+}
+
+.ui-properties-select:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.ui-properties-vector2-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.ui-properties-input-vector2 {
+  flex: 1;
+  width: 60px;
+}
+
+/* ===== Token Browser View ===== */
+.ui-token-browser-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.ui-token-browser-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.ui-token-browser-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ui-token-browser-add-btn {
+  padding: 4px 12px;
+  font-size: 16px;
+  font-weight: bold;
+  background: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-normal);
+}
+
+.ui-token-browser-add-btn:hover {
+  background: var(--interactive-hover);
+}
+
+.ui-token-browser-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.ui-token-browser-empty {
+  display: block;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Token category */
+.ui-token-category {
+  margin-bottom: 12px;
+}
+
+.ui-token-category-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ui-token-category-header:hover {
+  background: var(--background-modifier-hover);
+}
+
+.ui-token-category-toggle {
+  width: 16px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.ui-token-category-title {
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.ui-token-category-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ui-token-category-content {
+  padding: 4px 0;
+}
+
+.ui-token-category-content.is-collapsed {
+  display: none;
+}
+
+/* Token row */
+.ui-token-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.ui-token-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.ui-token-name {
+  flex: 0 0 70px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-token-preview {
+  flex: 0 0 32px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ui-token-value {
+  flex: 1;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-token-delete-btn {
+  opacity: 0;
+  padding: 2px 6px;
+  font-size: 14px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-error);
+  border-radius: 4px;
+}
+
+.ui-token-row:hover .ui-token-delete-btn {
+  opacity: 0.7;
+}
+
+.ui-token-delete-btn:hover {
+  opacity: 1 !important;
+  background: var(--background-modifier-error);
+}
+
+/* Token previews */
+.ui-token-color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.ui-token-spacing-bar {
+  height: 8px;
+  background: var(--interactive-accent);
+  border-radius: 2px;
+  min-width: 4px;
+}
+
+.ui-token-radius-box {
+  width: 20px;
+  height: 20px;
+  background: var(--background-modifier-border);
+  border: 2px solid var(--interactive-accent);
+}
+
+.ui-token-font-preview,
+.ui-token-size-preview,
+.ui-token-weight-preview {
+  color: var(--text-normal);
+}
+
+.ui-token-elevation-box {
+  width: 20px;
+  height: 16px;
+  background: var(--background-primary);
+  border-radius: 2px;
+}
+
+/* Token modal */
+.ui-token-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ui-token-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.ui-token-modal-dialog {
+  position: relative;
+  background: var(--background-primary);
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 300px;
+  max-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.ui-token-modal-dialog h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+
+.ui-token-modal-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ui-token-modal-row > span:first-child {
+  flex: 0 0 60px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ui-token-modal-input {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-normal);
+}
+
+.ui-token-modal-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.ui-token-modal-key {
+  flex: 1;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+}
+
+.ui-token-modal-color {
+  width: 40px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.ui-token-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.ui-token-modal-buttons button {
+  padding: 8px 16px;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+}
+
+.ui-token-modal-buttons button:hover {
+  background: var(--interactive-hover);
+}
+
+.ui-token-modal-primary {
+  background: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+  border-color: var(--interactive-accent) !important;
+}
+
+.ui-token-modal-primary:hover {
+  background: var(--interactive-accent-hover) !important;
+}
