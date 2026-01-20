@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "name": "Login Screen",
-  "description": "Example login screen design",
+  "description": "Example login screen design with responsive constraints",
   "tokens": {
     "color.primary": "#2E6BE6",
     "color.secondary": "#6B7280",
@@ -35,6 +35,10 @@
           "w": 375,
           "h": 667
         },
+        "constraints": {
+          "pin": { "left": true, "right": true, "top": true, "bottom": true },
+          "safeArea": true
+        },
         "style": {
           "background": "color.background"
         },
@@ -53,6 +57,10 @@
               "y": 100,
               "w": 275,
               "h": 40
+            },
+            "constraints": {
+              "pin": { "left": true, "right": true, "top": true },
+              "scaleMode": "fixed"
             },
             "style": {
               "textColor": "color.text"
@@ -74,6 +82,11 @@
               "y": 180,
               "w": 275,
               "h": 44
+            },
+            "constraints": {
+              "pin": { "left": true, "right": true },
+              "minH": 44,
+              "scaleMode": "fixed"
             },
             "style": {
               "background": "color.surface",
@@ -99,6 +112,11 @@
               "w": 275,
               "h": 44
             },
+            "constraints": {
+              "pin": { "left": true, "right": true },
+              "minH": 44,
+              "scaleMode": "fixed"
+            },
             "style": {
               "background": "color.surface",
               "borderRadius": 8
@@ -122,6 +140,11 @@
               "y": 320,
               "w": 275,
               "h": 48
+            },
+            "constraints": {
+              "pin": { "left": true, "right": true },
+              "minH": 48,
+              "scaleMode": "fixed"
             },
             "style": {
               "background": "color.primary",
@@ -150,6 +173,10 @@
               "w": 175,
               "h": 32
             },
+            "constraints": {
+              "pin": { "centerX": true },
+              "scaleMode": "fixed"
+            },
             "style": {
               "background": "transparent",
               "textColor": "color.primary"
@@ -160,6 +187,178 @@
             "meta": {
               "purpose": "Navigation to password reset flow",
               "behavior": "Opens password reset modal or navigates to reset page"
+            }
+          }
+        ]
+      }
+    },
+    "responsive_demo": {
+      "id": "responsive_demo",
+      "name": "Responsive Layout Demo",
+      "description": "Demonstrates responsive constraints with pinned header and flexible content",
+      "root": {
+        "id": "demo_root",
+        "type": "Container",
+        "name": "App Container",
+        "layout": {
+          "mode": "absolute",
+          "x": 0,
+          "y": 0,
+          "w": 375,
+          "h": 667
+        },
+        "constraints": {
+          "pin": { "left": true, "right": true, "top": true, "bottom": true },
+          "safeArea": true
+        },
+        "style": {
+          "background": "color.background"
+        },
+        "meta": {
+          "purpose": "Main app container demonstrating responsive constraints"
+        },
+        "children": [
+          {
+            "id": "pinned_header",
+            "type": "Header",
+            "name": "Pinned Header",
+            "layout": {
+              "mode": "absolute",
+              "x": 0,
+              "y": 0,
+              "w": 375,
+              "h": 60
+            },
+            "constraints": {
+              "pin": { "left": true, "right": true, "top": true },
+              "minH": 60,
+              "maxH": 80,
+              "scaleMode": "fixed"
+            },
+            "style": {
+              "background": "color.primary",
+              "textColor": "#FFFFFF"
+            },
+            "content": {
+              "text": "App Header"
+            },
+            "meta": {
+              "purpose": "Fixed header that stays pinned to top",
+              "behavior": "Remains fixed at top edge during scroll"
+            }
+          },
+          {
+            "id": "flexible_content",
+            "type": "Container",
+            "name": "Flexible Content Area",
+            "layout": {
+              "mode": "absolute",
+              "x": 0,
+              "y": 60,
+              "w": 375,
+              "h": 547
+            },
+            "constraints": {
+              "pin": { "left": true, "right": true, "top": true, "bottom": true },
+              "scaleMode": "fill"
+            },
+            "style": {
+              "background": "color.surface"
+            },
+            "meta": {
+              "purpose": "Flexible content area that expands to fill available space",
+              "behavior": "Grows and shrinks with container while respecting header/footer"
+            },
+            "children": [
+              {
+                "id": "content_card",
+                "type": "Card",
+                "name": "Feature Card",
+                "layout": {
+                  "mode": "absolute",
+                  "x": 16,
+                  "y": 16,
+                  "w": 343,
+                  "h": 200
+                },
+                "constraints": {
+                  "pin": { "left": true, "right": true, "top": true },
+                  "minW": 280,
+                  "maxW": 600,
+                  "aspectLock": 1.715,
+                  "scaleMode": "fit"
+                },
+                "style": {
+                  "background": "#FFFFFF",
+                  "borderRadius": 12
+                },
+                "content": {
+                  "text": "Feature Card with Aspect Lock"
+                },
+                "meta": {
+                  "purpose": "Content card with locked aspect ratio",
+                  "behavior": "Maintains 16:9.33 aspect ratio during resize"
+                }
+              },
+              {
+                "id": "image_container",
+                "type": "Container",
+                "name": "Hero Image",
+                "layout": {
+                  "mode": "absolute",
+                  "x": 16,
+                  "y": 232,
+                  "w": 343,
+                  "h": 193
+                },
+                "constraints": {
+                  "pin": { "left": true, "right": true },
+                  "aspectLock": 1.777,
+                  "scaleMode": "fit"
+                },
+                "style": {
+                  "background": "color.secondary",
+                  "borderRadius": 8
+                },
+                "content": {
+                  "text": "16:9 Image"
+                },
+                "meta": {
+                  "purpose": "Image container with 16:9 aspect ratio lock",
+                  "behavior": "Scales to fit while maintaining exact 16:9 ratio"
+                }
+              }
+            ]
+          },
+          {
+            "id": "pinned_footer",
+            "type": "Footer",
+            "name": "Pinned Footer",
+            "layout": {
+              "mode": "absolute",
+              "x": 0,
+              "y": 607,
+              "w": 375,
+              "h": 60
+            },
+            "constraints": {
+              "pin": { "left": true, "right": true, "bottom": true },
+              "minH": 50,
+              "maxH": 70,
+              "safeArea": true,
+              "scaleMode": "fixed"
+            },
+            "style": {
+              "background": "#FFFFFF",
+              "borderColor": "color.surface",
+              "borderWidth": 1
+            },
+            "content": {
+              "text": "Footer"
+            },
+            "meta": {
+              "purpose": "Fixed footer with safe area support",
+              "behavior": "Stays pinned to bottom, respects device safe areas (home indicator)"
             }
           }
         ]
