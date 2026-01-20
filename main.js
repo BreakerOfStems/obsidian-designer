@@ -22,10 +22,10 @@ __export(main_exports, {
   default: () => UIDesignerPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // src/views/UIEditorView.ts
-var import_obsidian = require("obsidian");
+var import_obsidian2 = require("obsidian");
 
 // src/types/ui-schema.ts
 function createEmptyDocument(name) {
@@ -92,6 +92,170 @@ function resolveToken(value, tokens) {
   return value;
 }
 
+// src/state/HistoryManager.ts
+var HistoryManager = class {
+  constructor() {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.maxHistorySize = 50;
+    this.currentDocumentJson = "";
+    this.pendingDescription = "Change";
+    this.batchDepth = 0;
+    this.batchStartJson = "";
+  }
+  /**
+   * Set the current document state (call this when document is loaded)
+   */
+  setCurrentState(doc) {
+    this.currentDocumentJson = JSON.stringify(doc);
+  }
+  /**
+   * Call before making a change to capture the "before" state.
+   * Use description to identify what action is being performed.
+   */
+  beginChange(description = "Change") {
+    this.pendingDescription = description;
+  }
+  /**
+   * Start a batch of changes that should be undone as a single action.
+   * Call endBatch() when done. Batches can be nested.
+   */
+  startBatch(description = "Change") {
+    if (this.batchDepth === 0) {
+      this.batchStartJson = this.currentDocumentJson;
+      this.pendingDescription = description;
+    }
+    this.batchDepth++;
+  }
+  /**
+   * End a batch of changes
+   */
+  endBatch(doc) {
+    if (this.batchDepth > 0) {
+      this.batchDepth--;
+      if (this.batchDepth === 0) {
+        const newJson = JSON.stringify(doc);
+        if (newJson !== this.batchStartJson) {
+          this.pushSnapshot(this.batchStartJson, this.pendingDescription);
+          this.currentDocumentJson = newJson;
+        }
+        this.batchStartJson = "";
+      }
+    }
+  }
+  /**
+   * Call after making a change to record it in history.
+   * Pass the new document state.
+   */
+  commitChange(doc, description) {
+    if (this.batchDepth > 0) {
+      return;
+    }
+    const newJson = JSON.stringify(doc);
+    if (newJson !== this.currentDocumentJson) {
+      this.pushSnapshot(
+        this.currentDocumentJson,
+        description || this.pendingDescription
+      );
+      this.currentDocumentJson = newJson;
+    }
+  }
+  /**
+   * Undo the last action.
+   * Returns the document state to restore, or null if nothing to undo.
+   */
+  undo(currentDoc) {
+    const snapshot = this.undoStack.pop();
+    if (!snapshot)
+      return null;
+    this.redoStack.push({
+      timestamp: Date.now(),
+      description: snapshot.description,
+      documentJson: JSON.stringify(currentDoc)
+    });
+    const restoredDoc = JSON.parse(snapshot.documentJson);
+    this.currentDocumentJson = snapshot.documentJson;
+    return restoredDoc;
+  }
+  /**
+   * Redo the last undone action.
+   * Returns the document state to restore, or null if nothing to redo.
+   */
+  redo(currentDoc) {
+    const snapshot = this.redoStack.pop();
+    if (!snapshot)
+      return null;
+    this.undoStack.push({
+      timestamp: Date.now(),
+      description: snapshot.description,
+      documentJson: JSON.stringify(currentDoc)
+    });
+    const restoredDoc = JSON.parse(snapshot.documentJson);
+    this.currentDocumentJson = snapshot.documentJson;
+    return restoredDoc;
+  }
+  /**
+   * Check if undo is available
+   */
+  canUndo() {
+    return this.undoStack.length > 0;
+  }
+  /**
+   * Check if redo is available
+   */
+  canRedo() {
+    return this.redoStack.length > 0;
+  }
+  /**
+   * Get the description of the next undo action
+   */
+  getUndoDescription() {
+    var _a;
+    const entry = this.undoStack[this.undoStack.length - 1];
+    return (_a = entry == null ? void 0 : entry.description) != null ? _a : null;
+  }
+  /**
+   * Get the description of the next redo action
+   */
+  getRedoDescription() {
+    var _a;
+    const entry = this.redoStack[this.redoStack.length - 1];
+    return (_a = entry == null ? void 0 : entry.description) != null ? _a : null;
+  }
+  /**
+   * Clear all history
+   */
+  clear() {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.batchDepth = 0;
+    this.batchStartJson = "";
+  }
+  /**
+   * Get undo stack size (for debugging)
+   */
+  getUndoStackSize() {
+    return this.undoStack.length;
+  }
+  /**
+   * Get redo stack size (for debugging)
+   */
+  getRedoStackSize() {
+    return this.redoStack.length;
+  }
+  pushSnapshot(documentJson, description) {
+    this.undoStack.push({
+      timestamp: Date.now(),
+      description,
+      documentJson
+    });
+    this.redoStack = [];
+    if (this.undoStack.length > this.maxHistorySize) {
+      this.undoStack.shift();
+    }
+  }
+};
+
 // src/state/EditorState.ts
 var EditorState = class {
   constructor() {
@@ -105,6 +269,7 @@ var EditorState = class {
       isDirty: false
     };
     this.listeners = /* @__PURE__ */ new Map();
+    this.historyManager = new HistoryManager();
   }
   // Event emitter methods
   on(event, callback) {
@@ -130,6 +295,8 @@ var EditorState = class {
     this.data.hoveredNodeId = null;
     const screenIds = Object.keys(doc.screens);
     this.data.currentScreenId = screenIds.length > 0 ? screenIds[0] : null;
+    this.historyManager.clear();
+    this.historyManager.setCurrentState(doc);
     this.emit("document-loaded", doc);
     this.emit("selection-changed", []);
   }
@@ -271,55 +438,203 @@ var EditorState = class {
     }
     return nodes;
   }
+  // Batch operations for grouping multiple changes into one undo step
+  startBatch(description) {
+    this.historyManager.startBatch(description);
+  }
+  endBatch() {
+    if (this.data.document) {
+      this.historyManager.endBatch(this.data.document);
+    }
+  }
   // Modification methods
-  updateNode(nodeId, updates) {
+  updateNode(nodeId, updates, description = "Update node") {
     const node = this.findNodeById(nodeId);
-    if (!node)
+    if (!node || !this.data.document)
       return;
     Object.assign(node, updates);
     this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
     this.emit("node-updated", nodeId, updates);
   }
-  updateNodeLayout(nodeId, layout) {
+  updateNodeLayout(nodeId, layout, description = "Move/resize") {
     const node = this.findNodeById(nodeId);
-    if (!node)
+    if (!node || !this.data.document)
       return;
     node.layout = { ...node.layout, ...layout };
     this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
     this.emit("node-updated", nodeId, { layout: node.layout });
   }
-  updateNodeStyle(nodeId, style) {
+  updateNodeStyle(nodeId, style, description = "Update style") {
     const node = this.findNodeById(nodeId);
-    if (!node)
+    if (!node || !this.data.document)
       return;
     node.style = { ...node.style, ...style };
     this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
     this.emit("node-updated", nodeId, { style: node.style });
   }
-  addNode(node, parentId) {
+  addNode(node, parentId, description = "Add node") {
     var _a;
     const parent = parentId ? this.findNodeById(parentId) : (_a = this.getCurrentScreen()) == null ? void 0 : _a.root;
-    if (!parent)
+    if (!parent || !this.data.document)
       return;
     if (!parent.children) {
       parent.children = [];
     }
     parent.children.push(node);
     this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
     this.emit("node-added", node, parentId);
   }
-  removeNode(nodeId) {
+  removeNode(nodeId, description = "Delete node") {
     const parent = this.findParentNode(nodeId);
-    if (!parent || !parent.children)
+    if (!parent || !parent.children || !this.data.document)
       return;
     const index = parent.children.findIndex((c) => c.id === nodeId);
     if (index !== -1) {
       parent.children.splice(index, 1);
       this.data.selectedNodeIds.delete(nodeId);
       this.markDirty();
+      this.historyManager.commitChange(this.data.document, description);
       this.emit("node-removed", nodeId);
       this.emit("selection-changed", Array.from(this.data.selectedNodeIds));
     }
+  }
+  /**
+   * Get the absolute position of a node (accounting for all parent offsets)
+   */
+  getAbsolutePosition(nodeId) {
+    const screen = this.getCurrentScreen();
+    if (!screen)
+      return null;
+    return this.getAbsolutePositionRecursive(nodeId, screen.root, 0, 0);
+  }
+  getAbsolutePositionRecursive(nodeId, node, parentX, parentY) {
+    if (node.layout.mode !== "absolute")
+      return null;
+    const absoluteX = parentX + node.layout.x;
+    const absoluteY = parentY + node.layout.y;
+    if (node.id === nodeId) {
+      return { x: absoluteX, y: absoluteY };
+    }
+    if (node.children) {
+      for (const child of node.children) {
+        const result = this.getAbsolutePositionRecursive(
+          nodeId,
+          child,
+          absoluteX,
+          absoluteY
+        );
+        if (result)
+          return result;
+      }
+    }
+    return null;
+  }
+  /**
+   * Move a node to a new parent, adjusting coordinates to maintain visual position
+   */
+  reparentNode(nodeId, newParentId, description = "Reparent node") {
+    if (nodeId === "root" || !this.data.document)
+      return false;
+    const node = this.findNodeById(nodeId);
+    const newParent = this.findNodeById(newParentId);
+    const currentParent = this.findParentNode(nodeId);
+    if (!node || !newParent || !currentParent)
+      return false;
+    if (newParentId === nodeId || this.isDescendant(newParentId, nodeId)) {
+      return false;
+    }
+    if (currentParent.id === newParentId)
+      return false;
+    const absolutePos = this.getAbsolutePosition(nodeId);
+    if (!absolutePos)
+      return false;
+    const newParentAbsolutePos = this.getAbsolutePosition(newParentId);
+    if (!newParentAbsolutePos)
+      return false;
+    if (currentParent.children) {
+      const index = currentParent.children.findIndex((c) => c.id === nodeId);
+      if (index !== -1) {
+        currentParent.children.splice(index, 1);
+      }
+    }
+    if (!newParent.children) {
+      newParent.children = [];
+    }
+    newParent.children.push(node);
+    if (node.layout.mode === "absolute") {
+      node.layout.x = absolutePos.x - newParentAbsolutePos.x;
+      node.layout.y = absolutePos.y - newParentAbsolutePos.y;
+    }
+    this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
+    this.emit("node-updated", nodeId, { layout: node.layout });
+    return true;
+  }
+  /**
+   * Check if potentialDescendant is a descendant of ancestorId
+   */
+  isDescendant(potentialDescendantId, ancestorId) {
+    const ancestor = this.findNodeById(ancestorId);
+    if (!ancestor || !ancestor.children)
+      return false;
+    for (const child of ancestor.children) {
+      if (child.id === potentialDescendantId)
+        return true;
+      if (this.isDescendant(potentialDescendantId, child.id))
+        return true;
+    }
+    return false;
+  }
+  /**
+   * Find container node at given absolute coordinates, excluding specified node IDs
+   * Returns the deepest (most nested) container at that position
+   */
+  findContainerAtPosition(worldX, worldY, excludeIds) {
+    const screen = this.getCurrentScreen();
+    if (!screen)
+      return null;
+    return this.findContainerAtPositionRecursive(
+      worldX,
+      worldY,
+      screen.root,
+      0,
+      0,
+      excludeIds
+    );
+  }
+  findContainerAtPositionRecursive(worldX, worldY, node, parentX, parentY, excludeIds) {
+    if (node.layout.mode !== "absolute")
+      return null;
+    const nodeX = parentX + node.layout.x;
+    const nodeY = parentY + node.layout.y;
+    if (excludeIds.includes(node.id)) {
+      return null;
+    }
+    if (node.children) {
+      for (let i = node.children.length - 1; i >= 0; i--) {
+        const child = node.children[i];
+        if (child.type === "Container" && !excludeIds.includes(child.id)) {
+          const result = this.findContainerAtPositionRecursive(
+            worldX,
+            worldY,
+            child,
+            nodeX,
+            nodeY,
+            excludeIds
+          );
+          if (result)
+            return result;
+        }
+      }
+    }
+    if (node.type === "Container" && worldX >= nodeX && worldX <= nodeX + node.layout.w && worldY >= nodeY && worldY <= nodeY + node.layout.h) {
+      return node.id;
+    }
+    return null;
   }
   // Dirty state
   markDirty() {
@@ -339,24 +654,160 @@ var EditorState = class {
       return "{}";
     return JSON.stringify(this.data.document, null, 2);
   }
+  // History management
+  getHistoryManager() {
+    return this.historyManager;
+  }
+  undo() {
+    if (!this.data.document)
+      return false;
+    const restoredDoc = this.historyManager.undo(this.data.document);
+    if (restoredDoc) {
+      this.data.document = restoredDoc;
+      this.data.selectedNodeIds.clear();
+      this.data.hoveredNodeId = null;
+      const screenIds = Object.keys(restoredDoc.screens);
+      if (this.data.currentScreenId && !restoredDoc.screens[this.data.currentScreenId]) {
+        this.data.currentScreenId = screenIds.length > 0 ? screenIds[0] : null;
+      }
+      this.markDirty();
+      this.emit("document-loaded", restoredDoc);
+      this.emit("selection-changed", []);
+      this.emit("history-changed");
+      return true;
+    }
+    return false;
+  }
+  redo() {
+    if (!this.data.document)
+      return false;
+    const restoredDoc = this.historyManager.redo(this.data.document);
+    if (restoredDoc) {
+      this.data.document = restoredDoc;
+      this.data.selectedNodeIds.clear();
+      this.data.hoveredNodeId = null;
+      const screenIds = Object.keys(restoredDoc.screens);
+      if (this.data.currentScreenId && !restoredDoc.screens[this.data.currentScreenId]) {
+        this.data.currentScreenId = screenIds.length > 0 ? screenIds[0] : null;
+      }
+      this.markDirty();
+      this.emit("document-loaded", restoredDoc);
+      this.emit("selection-changed", []);
+      this.emit("history-changed");
+      return true;
+    }
+    return false;
+  }
+  canUndo() {
+    return this.historyManager.canUndo();
+  }
+  canRedo() {
+    return this.historyManager.canRedo();
+  }
   // Cleanup
   destroy() {
     this.listeners.clear();
+    this.historyManager.clear();
     this.data.document = null;
     this.data.file = null;
   }
 };
-var globalState = null;
-function getEditorState() {
-  if (!globalState) {
-    globalState = new EditorState();
+var EditorStateManager = class {
+  constructor() {
+    this.states = /* @__PURE__ */ new Map();
+    this.activeFilePath = null;
+    this.listeners = /* @__PURE__ */ new Map();
   }
-  return globalState;
+  /**
+   * Get or create an EditorState for a specific file path
+   */
+  getStateForFile(filePath) {
+    let state = this.states.get(filePath);
+    if (!state) {
+      state = new EditorState();
+      this.states.set(filePath, state);
+    }
+    return state;
+  }
+  /**
+   * Get the state for the currently active file
+   */
+  getActiveState() {
+    if (!this.activeFilePath)
+      return null;
+    return this.states.get(this.activeFilePath) || null;
+  }
+  /**
+   * Set the active file path and notify listeners
+   */
+  setActiveFile(filePath) {
+    if (this.activeFilePath === filePath)
+      return;
+    this.activeFilePath = filePath;
+    this.emit("active-state-changed", filePath ? this.getStateForFile(filePath) : null);
+  }
+  /**
+   * Get the active file path
+   */
+  getActiveFilePath() {
+    return this.activeFilePath;
+  }
+  /**
+   * Remove state for a file (call when file is closed)
+   */
+  removeStateForFile(filePath) {
+    const state = this.states.get(filePath);
+    if (state) {
+      state.destroy();
+      this.states.delete(filePath);
+    }
+    if (this.activeFilePath === filePath) {
+      this.activeFilePath = null;
+    }
+  }
+  /**
+   * Subscribe to manager events
+   */
+  on(event, callback) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, /* @__PURE__ */ new Set());
+    }
+    this.listeners.get(event).add(callback);
+  }
+  /**
+   * Unsubscribe from manager events
+   */
+  off(event, callback) {
+    var _a;
+    (_a = this.listeners.get(event)) == null ? void 0 : _a.delete(callback);
+  }
+  emit(event, ...args) {
+    var _a;
+    (_a = this.listeners.get(event)) == null ? void 0 : _a.forEach((cb) => cb(...args));
+  }
+  /**
+   * Clean up all states
+   */
+  destroy() {
+    for (const state of this.states.values()) {
+      state.destroy();
+    }
+    this.states.clear();
+    this.listeners.clear();
+    this.activeFilePath = null;
+  }
+};
+var stateManager = null;
+function getEditorStateManager() {
+  if (!stateManager) {
+    stateManager = new EditorStateManager();
+  }
+  return stateManager;
 }
-function resetEditorState() {
-  if (globalState) {
-    globalState.destroy();
-    globalState = null;
+function resetEditorStateManager() {
+  if (stateManager) {
+    stateManager.destroy();
+    stateManager = null;
   }
 }
 
@@ -623,7 +1074,12 @@ var CanvasRenderer = class {
     const viewport = this.state.getViewport();
     const worldX = (screenX - viewport.panX) / viewport.zoom;
     const worldY = (screenY - viewport.panY) / viewport.zoom;
-    const { x, y, w, h } = selectedNode.layout;
+    const absolutePos = this.state.getAbsolutePosition(selectedNode.id);
+    if (!absolutePos)
+      return null;
+    const x = absolutePos.x;
+    const y = absolutePos.y;
+    const { w, h } = selectedNode.layout;
     const handleSize = 8 / viewport.zoom;
     const tolerance = handleSize;
     const handles = {
@@ -652,13 +1108,280 @@ var CanvasRenderer = class {
 };
 
 // src/canvas/CanvasInteraction.ts
+var import_obsidian = require("obsidian");
+
+// src/clipboard/ClipboardService.ts
+var ClipboardService = class {
+  constructor(state) {
+    this.clipboard = null;
+    this.gridStep = 10;
+    this.maxOverlapAttempts = 10;
+    this.state = state;
+  }
+  /**
+   * Copy selected nodes to clipboard
+   * Returns true if any nodes were copied
+   */
+  copy() {
+    const selectedIds = this.state.getSelectedNodeIds();
+    if (selectedIds.length === 0) {
+      return false;
+    }
+    const nodesToCopy = [];
+    const rootNodeIds = [];
+    for (const id of selectedIds) {
+      const node = this.state.findNodeById(id);
+      if (node && node.id !== "root") {
+        const clonedNode = this.deepCloneNode(node);
+        nodesToCopy.push(clonedNode);
+        rootNodeIds.push(clonedNode.id);
+      }
+    }
+    if (nodesToCopy.length === 0) {
+      return false;
+    }
+    const boundingBox = this.calculateBoundingBox(nodesToCopy);
+    const doc = this.state.getDocument();
+    const sourceDocumentId = (doc == null ? void 0 : doc.name) || "unknown";
+    this.clipboard = {
+      schemaVersion: 1,
+      copiedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      sourceDocumentId,
+      nodes: nodesToCopy,
+      rootNodeIds,
+      boundingBox
+    };
+    this.copyToSystemClipboard(this.clipboard);
+    return true;
+  }
+  /**
+   * Paste nodes from clipboard at the specified cursor position
+   * Returns array of pasted node IDs, or null if paste failed
+   */
+  paste(cursorX, cursorY) {
+    if (!this.clipboard || this.clipboard.nodes.length === 0) {
+      return null;
+    }
+    const screen = this.state.getCurrentScreen();
+    if (!screen) {
+      return null;
+    }
+    const anchor = {
+      x: this.clipboard.boundingBox.minX,
+      y: this.clipboard.boundingBox.minY
+    };
+    let deltaX = cursorX - anchor.x;
+    let deltaY = cursorY - anchor.y;
+    const idMapping = /* @__PURE__ */ new Map();
+    const pastedNodes = [];
+    for (const node of this.clipboard.nodes) {
+      const newNode = this.cloneWithNewIds(node, idMapping);
+      pastedNodes.push(newNode);
+    }
+    for (const node of pastedNodes) {
+      this.translateNode(node, deltaX, deltaY);
+    }
+    let newBoundingBox = this.calculateBoundingBox(pastedNodes);
+    const originalBoundingBox = this.clipboard.boundingBox;
+    let attempts = 0;
+    while (attempts < this.maxOverlapAttempts && this.boundingBoxesOverlap(newBoundingBox, originalBoundingBox)) {
+      const nudgeX = this.snapToGrid(this.gridStep);
+      const nudgeY = this.snapToGrid(this.gridStep);
+      for (const node of pastedNodes) {
+        this.translateNode(node, nudgeX, nudgeY);
+      }
+      newBoundingBox = this.calculateBoundingBox(pastedNodes);
+      attempts++;
+    }
+    const parentId = this.determineParent(pastedNodes, cursorX, cursorY);
+    const description = `Paste ${pastedNodes.length} component${pastedNodes.length > 1 ? "s" : ""}`;
+    this.state.startBatch(description);
+    const pastedIds = [];
+    for (const node of pastedNodes) {
+      this.state.addNode(node, parentId, description);
+      pastedIds.push(node.id);
+    }
+    this.state.endBatch();
+    this.state.clearSelection();
+    for (const id of pastedIds) {
+      this.state.selectNode(id, true);
+    }
+    return pastedIds;
+  }
+  /**
+   * Duplicate selected nodes with a fixed offset (no cursor position needed)
+   * Returns array of duplicated node IDs, or null if duplication failed
+   */
+  duplicate() {
+    if (!this.copy()) {
+      return null;
+    }
+    const boundingBox = this.clipboard.boundingBox;
+    const offsetX = boundingBox.minX + this.gridStep * 2;
+    const offsetY = boundingBox.minY + this.gridStep * 2;
+    return this.paste(offsetX, offsetY);
+  }
+  /**
+   * Check if clipboard has content
+   */
+  hasContent() {
+    return this.clipboard !== null && this.clipboard.nodes.length > 0;
+  }
+  /**
+   * Get the current clipboard content (for debugging/inspection)
+   */
+  getClipboard() {
+    return this.clipboard;
+  }
+  /**
+   * Set grid step for overlap avoidance
+   */
+  setGridStep(step) {
+    this.gridStep = Math.max(1, step);
+  }
+  /**
+   * Deep clone a node and all its children
+   */
+  deepCloneNode(node) {
+    return JSON.parse(JSON.stringify(node));
+  }
+  /**
+   * Clone a node with new unique IDs, recursively updating all references
+   */
+  cloneWithNewIds(node, idMapping) {
+    const cloned = this.deepCloneNode(node);
+    this.regenerateIds(cloned, idMapping);
+    return cloned;
+  }
+  /**
+   * Recursively regenerate IDs for a node and all its children
+   */
+  regenerateIds(node, idMapping) {
+    var _a;
+    const oldId = node.id;
+    const newId = this.generateId();
+    idMapping.set(oldId, newId);
+    node.id = newId;
+    if (node.children) {
+      for (const child of node.children) {
+        this.regenerateIds(child, idMapping);
+      }
+    }
+    if ((_a = node.meta) == null ? void 0 : _a.related) {
+      node.meta.related = node.meta.related.map((ref) => {
+        const mappedId = idMapping.get(ref);
+        return mappedId || ref;
+      });
+    }
+  }
+  /**
+   * Generate a unique node ID
+   */
+  generateId() {
+    return `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+  /**
+   * Calculate bounding box for a set of nodes
+   */
+  calculateBoundingBox(nodes) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const node of nodes) {
+      const bounds = this.getNodeBounds(node);
+      minX = Math.min(minX, bounds.minX);
+      minY = Math.min(minY, bounds.minY);
+      maxX = Math.max(maxX, bounds.maxX);
+      maxY = Math.max(maxY, bounds.maxY);
+    }
+    return { minX, minY, maxX, maxY };
+  }
+  /**
+   * Get the bounding box of a single node (including children)
+   */
+  getNodeBounds(node, offsetX = 0, offsetY = 0) {
+    if (node.layout.mode !== "absolute") {
+      return { minX: offsetX, minY: offsetY, maxX: offsetX, maxY: offsetY };
+    }
+    const layout = node.layout;
+    const nodeX = offsetX + layout.x;
+    const nodeY = offsetY + layout.y;
+    let minX = nodeX;
+    let minY = nodeY;
+    let maxX = nodeX + layout.w;
+    let maxY = nodeY + layout.h;
+    if (node.children) {
+      for (const child of node.children) {
+        const childBounds = this.getNodeBounds(child, nodeX, nodeY);
+        minX = Math.min(minX, childBounds.minX);
+        minY = Math.min(minY, childBounds.minY);
+        maxX = Math.max(maxX, childBounds.maxX);
+        maxY = Math.max(maxY, childBounds.maxY);
+      }
+    }
+    return { minX, minY, maxX, maxY };
+  }
+  /**
+   * Translate a node's position by a delta amount
+   */
+  translateNode(node, deltaX, deltaY) {
+    if (node.layout.mode === "absolute") {
+      const layout = node.layout;
+      layout.x += deltaX;
+      layout.y += deltaY;
+    }
+  }
+  /**
+   * Check if two bounding boxes overlap
+   */
+  boundingBoxesOverlap(box1, box2) {
+    return !(box1.maxX <= box2.minX || box1.minX >= box2.maxX || box1.maxY <= box2.minY || box1.minY >= box2.maxY);
+  }
+  /**
+   * Snap a value to the grid
+   */
+  snapToGrid(value) {
+    return Math.round(value / this.gridStep) * this.gridStep;
+  }
+  /**
+   * Determine the parent node for pasted nodes based on context
+   */
+  determineParent(_pastedNodes, _cursorX, _cursorY) {
+    const screen = this.state.getCurrentScreen();
+    return screen == null ? void 0 : screen.root.id;
+  }
+  /**
+   * Copy clipboard data to system clipboard as JSON
+   */
+  async copyToSystemClipboard(payload) {
+    try {
+      const json = JSON.stringify(payload);
+      await navigator.clipboard.writeText(json);
+    } catch (e) {
+      console.debug("Could not copy to system clipboard:", e);
+    }
+  }
+  /**
+   * Clear the internal clipboard
+   */
+  clear() {
+    this.clipboard = null;
+  }
+};
+
+// src/canvas/CanvasInteraction.ts
 var CanvasInteraction = class {
   constructor(canvas, state, renderer) {
     this.snapEnabled = true;
     this.snapSize = 10;
+    this.lastMouseX = 0;
+    this.lastMouseY = 0;
+    this.boundKeyDownHandler = null;
     this.canvas = canvas;
     this.state = state;
     this.renderer = renderer;
+    this.clipboardService = new ClipboardService(state);
     this.drag = {
       mode: "none",
       startX: 0,
@@ -669,7 +1392,8 @@ var CanvasInteraction = class {
       startNodeY: 0,
       startNodeW: 0,
       startNodeH: 0,
-      resizeHandle: null
+      resizeHandle: null,
+      selectedNodesStart: []
     };
     this.setupEventListeners();
   }
@@ -682,8 +1406,12 @@ var CanvasInteraction = class {
       passive: false
     });
     this.canvas.addEventListener("dblclick", this.onDoubleClick.bind(this));
+    this.canvas.addEventListener("contextmenu", this.onContextMenu.bind(this));
     this.canvas.tabIndex = 0;
-    this.canvas.addEventListener("keydown", this.onKeyDown.bind(this));
+    this.canvas.style.outline = "none";
+    const keyHandler = this.onKeyDown.bind(this);
+    this.boundKeyDownHandler = keyHandler;
+    document.addEventListener("keydown", keyHandler, true);
   }
   getCanvasCoords(e) {
     const rect = this.canvas.getBoundingClientRect();
@@ -727,6 +1455,8 @@ var CanvasInteraction = class {
   }
   onMouseMove(e) {
     const coords = this.getCanvasCoords(e);
+    this.lastMouseX = coords.x;
+    this.lastMouseY = coords.y;
     switch (this.drag.mode) {
       case "pan":
         this.doPan(coords.x, coords.y);
@@ -742,15 +1472,52 @@ var CanvasInteraction = class {
         this.updateCursor(coords.x, coords.y);
     }
   }
-  onMouseUp(_e) {
+  onMouseUp(e) {
+    if (this.drag.mode === "move") {
+      this.handleDropReparent(e);
+      this.state.endBatch();
+    } else if (this.drag.mode === "resize") {
+      this.state.endBatch();
+    }
     this.drag.mode = "none";
     this.drag.resizeHandle = null;
+    this.drag.selectedNodesStart = [];
     this.canvas.style.cursor = "default";
+  }
+  /**
+   * After dropping moved elements, reparent them to the container they're on top of
+   */
+  handleDropReparent(_e) {
+    const selectedIds = this.state.getSelectedNodeIds();
+    if (selectedIds.length === 0)
+      return;
+    for (const nodeId of selectedIds) {
+      const node = this.state.findNodeById(nodeId);
+      if (!node || node.layout.mode !== "absolute")
+        continue;
+      const absolutePos = this.state.getAbsolutePosition(nodeId);
+      if (!absolutePos)
+        continue;
+      const nodeCenterX = absolutePos.x + node.layout.w / 2;
+      const nodeCenterY = absolutePos.y + node.layout.h / 2;
+      const targetContainerId = this.state.findContainerAtPosition(
+        nodeCenterX,
+        nodeCenterY,
+        selectedIds
+      );
+      if (targetContainerId) {
+        this.state.reparentNode(nodeId, targetContainerId);
+      }
+    }
   }
   onMouseLeave(_e) {
     this.state.setHoveredNode(null);
     if (this.drag.mode !== "none") {
+      if (this.drag.mode === "move" || this.drag.mode === "resize") {
+        this.state.endBatch();
+      }
       this.drag.mode = "none";
+      this.drag.selectedNodesStart = [];
     }
   }
   onWheel(e) {
@@ -783,8 +1550,58 @@ var CanvasInteraction = class {
       this.state.setViewport({ panX: 50, panY: 50, zoom: 1 });
     }
   }
-  onKeyDown(e) {
+  onContextMenu(e) {
+    e.preventDefault();
+    const coords = this.getCanvasCoords(e);
+    this.lastMouseX = coords.x;
+    this.lastMouseY = coords.y;
+    const hitNodeId = this.renderer.hitTest(coords.x, coords.y);
+    if (hitNodeId && !this.state.isNodeSelected(hitNodeId)) {
+      this.state.selectNode(hitNodeId);
+    }
     const selectedIds = this.state.getSelectedNodeIds();
+    const hasSelection = selectedIds.length > 0;
+    const hasClipboard = this.hasClipboardContent();
+    const menu = new import_obsidian.Menu();
+    menu.addItem((item) => {
+      item.setTitle("Copy").setIcon("copy").setDisabled(!hasSelection).onClick(() => {
+        this.copySelection();
+      });
+    });
+    menu.addItem((item) => {
+      item.setTitle("Cut").setIcon("scissors").setDisabled(!hasSelection).onClick(() => {
+        this.cutSelection();
+      });
+    });
+    menu.addItem((item) => {
+      item.setTitle("Paste").setIcon("clipboard-paste").setDisabled(!hasClipboard).onClick(() => {
+        this.pasteAtCursor();
+      });
+    });
+    menu.addSeparator();
+    menu.addItem((item) => {
+      item.setTitle("Duplicate").setIcon("copy-plus").setDisabled(!hasSelection).onClick(() => {
+        this.duplicateSelection();
+      });
+    });
+    menu.addItem((item) => {
+      item.setTitle("Delete").setIcon("trash-2").setDisabled(!hasSelection).onClick(() => {
+        for (const id of selectedIds) {
+          const node = this.state.findNodeById(id);
+          if (node && node.id !== "root") {
+            this.state.removeNode(id);
+          }
+        }
+      });
+    });
+    menu.showAtMouseEvent(e);
+  }
+  onKeyDown(e) {
+    if (document.activeElement !== this.canvas) {
+      return;
+    }
+    const selectedIds = this.state.getSelectedNodeIds();
+    let handled = false;
     switch (e.key) {
       case "Delete":
       case "Backspace":
@@ -794,10 +1611,11 @@ var CanvasInteraction = class {
             this.state.removeNode(id);
           }
         }
-        e.preventDefault();
+        handled = true;
         break;
       case "Escape":
         this.state.clearSelection();
+        handled = true;
         break;
       case "a":
         if (e.ctrlKey || e.metaKey) {
@@ -807,9 +1625,53 @@ var CanvasInteraction = class {
               this.state.selectNode(node.id, true);
             }
           }
-          e.preventDefault();
+          handled = true;
         }
         break;
+      case "c":
+        if (e.ctrlKey || e.metaKey) {
+          this.copySelection();
+          handled = true;
+        }
+        break;
+      case "x":
+        if (e.ctrlKey || e.metaKey) {
+          this.cutSelection();
+          handled = true;
+        }
+        break;
+      case "v":
+        if (e.ctrlKey || e.metaKey) {
+          this.pasteAtCursor();
+          handled = true;
+        }
+        break;
+      case "d":
+        if (e.ctrlKey || e.metaKey) {
+          this.duplicateSelection();
+          handled = true;
+        }
+        break;
+      case "z":
+        if (e.ctrlKey || e.metaKey) {
+          if (e.shiftKey) {
+            this.state.redo();
+          } else {
+            this.state.undo();
+          }
+          handled = true;
+        }
+        break;
+      case "y":
+        if (e.ctrlKey || e.metaKey) {
+          this.state.redo();
+          handled = true;
+        }
+        break;
+    }
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
     }
   }
   // Drag operations
@@ -825,7 +1687,8 @@ var CanvasInteraction = class {
       startNodeY: 0,
       startNodeW: 0,
       startNodeH: 0,
-      resizeHandle: null
+      resizeHandle: null,
+      selectedNodesStart: []
     };
     this.canvas.style.cursor = "grabbing";
   }
@@ -838,42 +1701,65 @@ var CanvasInteraction = class {
     });
   }
   startMove(x, y) {
-    const node = this.state.getSelectedNode();
-    if (!node || node.layout.mode !== "absolute")
+    const selectedIds = this.state.getSelectedNodeIds();
+    if (selectedIds.length === 0)
       return;
+    const selectedNodesStart = [];
+    for (const id of selectedIds) {
+      const node = this.state.findNodeById(id);
+      if (node && node.layout.mode === "absolute") {
+        selectedNodesStart.push({
+          id: node.id,
+          x: node.layout.x,
+          y: node.layout.y,
+          w: node.layout.w,
+          h: node.layout.h
+        });
+      }
+    }
+    if (selectedNodesStart.length === 0)
+      return;
+    this.state.startBatch("Move");
+    const firstNode = selectedNodesStart[0];
     this.drag = {
       mode: "move",
       startX: x,
       startY: y,
       startPanX: 0,
       startPanY: 0,
-      startNodeX: node.layout.x,
-      startNodeY: node.layout.y,
-      startNodeW: node.layout.w,
-      startNodeH: node.layout.h,
-      resizeHandle: null
+      startNodeX: firstNode.x,
+      startNodeY: firstNode.y,
+      startNodeW: firstNode.w,
+      startNodeH: firstNode.h,
+      resizeHandle: null,
+      selectedNodesStart
     };
     this.canvas.style.cursor = "move";
   }
   doMove(x, y) {
-    const node = this.state.getSelectedNode();
-    if (!node || node.layout.mode !== "absolute")
+    if (this.drag.selectedNodesStart.length === 0)
       return;
     const viewport = this.state.getViewport();
     const dx = (x - this.drag.startX) / viewport.zoom;
     const dy = (y - this.drag.startY) / viewport.zoom;
-    this.state.updateNodeLayout(node.id, {
-      mode: "absolute",
-      x: this.snap(this.drag.startNodeX + dx),
-      y: this.snap(this.drag.startNodeY + dy),
-      w: node.layout.w,
-      h: node.layout.h
-    });
+    for (const startPos of this.drag.selectedNodesStart) {
+      const node = this.state.findNodeById(startPos.id);
+      if (!node || node.layout.mode !== "absolute")
+        continue;
+      this.state.updateNodeLayout(startPos.id, {
+        mode: "absolute",
+        x: this.snap(startPos.x + dx),
+        y: this.snap(startPos.y + dy),
+        w: startPos.w,
+        h: startPos.h
+      });
+    }
   }
   startResize(x, y, handle) {
     const node = this.state.getSelectedNode();
     if (!node || node.layout.mode !== "absolute")
       return;
+    this.state.startBatch("Resize");
     this.drag = {
       mode: "resize",
       startX: x,
@@ -884,7 +1770,8 @@ var CanvasInteraction = class {
       startNodeY: node.layout.y,
       startNodeW: node.layout.w,
       startNodeH: node.layout.h,
-      resizeHandle: handle
+      resizeHandle: handle,
+      selectedNodesStart: []
     };
     this.updateResizeCursor(handle);
   }
@@ -987,19 +1874,106 @@ var CanvasInteraction = class {
     this.state.addNode(node);
     this.state.selectNode(node.id);
   }
+  // Clipboard operations
+  /**
+   * Copy selected nodes to clipboard
+   * Returns true if any nodes were copied
+   */
+  copySelection() {
+    return this.clipboardService.copy();
+  }
+  /**
+   * Cut selected nodes (copy then delete)
+   * Returns true if any nodes were cut
+   */
+  cutSelection() {
+    const selectedIds = this.state.getSelectedNodeIds();
+    if (selectedIds.length === 0) {
+      return false;
+    }
+    if (!this.clipboardService.copy()) {
+      return false;
+    }
+    for (const id of selectedIds) {
+      const node = this.state.findNodeById(id);
+      if (node && node.id !== "root") {
+        this.state.removeNode(id);
+      }
+    }
+    return true;
+  }
+  /**
+   * Paste nodes at the current cursor position
+   * Returns array of pasted node IDs, or null if paste failed
+   */
+  pasteAtCursor() {
+    const viewport = this.state.getViewport();
+    const worldX = (this.lastMouseX - viewport.panX) / viewport.zoom;
+    const worldY = (this.lastMouseY - viewport.panY) / viewport.zoom;
+    return this.clipboardService.paste(worldX, worldY);
+  }
+  /**
+   * Paste nodes at a specific world position
+   * Returns array of pasted node IDs, or null if paste failed
+   */
+  pasteAtPosition(worldX, worldY) {
+    return this.clipboardService.paste(worldX, worldY);
+  }
+  /**
+   * Duplicate selected nodes with a fixed offset
+   * Returns array of duplicated node IDs, or null if duplication failed
+   */
+  duplicateSelection() {
+    return this.clipboardService.duplicate();
+  }
+  /**
+   * Check if clipboard has content
+   */
+  hasClipboardContent() {
+    return this.clipboardService.hasContent();
+  }
+  /**
+   * Get the clipboard service for external access
+   */
+  getClipboardService() {
+    return this.clipboardService;
+  }
   destroy() {
+    if (this.boundKeyDownHandler) {
+      document.removeEventListener("keydown", this.boundKeyDownHandler, true);
+      this.boundKeyDownHandler = null;
+    }
   }
 };
 
 // src/views/UIEditorView.ts
 var UI_EDITOR_VIEW_TYPE = "ui-editor-view";
-var UIEditorView = class extends import_obsidian.TextFileView {
+var UIEditorView = class extends import_obsidian2.TextFileView {
   constructor(leaf) {
     super(leaf);
+    this.state = null;
     this.canvas = null;
     this.renderer = null;
     this.interaction = null;
-    this.state = getEditorState();
+    this.dirtyHandler = null;
+  }
+  /**
+   * Get the state for this view (creates one tied to the file path)
+   */
+  ensureState() {
+    if (!this.state && this.file) {
+      this.state = getEditorStateManager().getStateForFile(this.file.path);
+    }
+    if (!this.state) {
+      this.state = getEditorStateManager().getStateForFile("__temp__");
+    }
+    return this.state;
+  }
+  /**
+   * Get the EditorState for external access (e.g., clipboard commands)
+   */
+  getEditorState() {
+    return this.ensureState();
   }
   getViewType() {
     return UI_EDITOR_VIEW_TYPE;
@@ -1023,25 +1997,45 @@ var UIEditorView = class extends import_obsidian.TextFileView {
     this.canvas = canvasContainer.createEl("canvas", {
       cls: "ui-editor-canvas"
     });
-    this.renderer = new CanvasRenderer(this.canvas, this.state);
+  }
+  /**
+   * Initialize or reinitialize renderer and interaction with current state
+   */
+  initializeCanvas() {
+    var _a, _b;
+    if (!this.canvas)
+      return;
+    (_a = this.renderer) == null ? void 0 : _a.destroy();
+    (_b = this.interaction) == null ? void 0 : _b.destroy();
+    if (this.dirtyHandler && this.state) {
+      this.state.off("dirty-changed", this.dirtyHandler);
+    }
+    const state = this.ensureState();
+    this.renderer = new CanvasRenderer(this.canvas, state);
     this.interaction = new CanvasInteraction(
       this.canvas,
-      this.state,
+      state,
       this.renderer
     );
-    this.state.on("dirty-changed", (isDirty) => {
+    this.dirtyHandler = (isDirty) => {
       if (isDirty) {
         this.requestSave();
       }
-    });
+    };
+    state.on("dirty-changed", this.dirtyHandler);
   }
   async onClose() {
     var _a, _b;
+    if (this.dirtyHandler && this.state) {
+      this.state.off("dirty-changed", this.dirtyHandler);
+      this.dirtyHandler = null;
+    }
     (_a = this.renderer) == null ? void 0 : _a.destroy();
     (_b = this.interaction) == null ? void 0 : _b.destroy();
     this.canvas = null;
     this.renderer = null;
     this.interaction = null;
+    this.state = null;
   }
   createToolbar(container) {
     const nodeTypes = [
@@ -1072,7 +2066,7 @@ var UIEditorView = class extends import_obsidian.TextFileView {
     });
     resetViewBtn.textContent = "Reset View";
     resetViewBtn.addEventListener("click", () => {
-      this.state.setViewport({ panX: 50, panY: 50, zoom: 1 });
+      this.ensureState().setViewport({ panX: 50, panY: 50, zoom: 1 });
     });
     const zoomInBtn = viewGroup.createEl("button", {
       cls: "ui-editor-toolbar-btn",
@@ -1080,8 +2074,9 @@ var UIEditorView = class extends import_obsidian.TextFileView {
     });
     zoomInBtn.textContent = "+";
     zoomInBtn.addEventListener("click", () => {
-      const viewport = this.state.getViewport();
-      this.state.setViewport({ zoom: Math.min(viewport.zoom * 1.2, 5) });
+      const state = this.ensureState();
+      const viewport = state.getViewport();
+      state.setViewport({ zoom: Math.min(viewport.zoom * 1.2, 5) });
     });
     const zoomOutBtn = viewGroup.createEl("button", {
       cls: "ui-editor-toolbar-btn",
@@ -1089,8 +2084,9 @@ var UIEditorView = class extends import_obsidian.TextFileView {
     });
     zoomOutBtn.textContent = "-";
     zoomOutBtn.addEventListener("click", () => {
-      const viewport = this.state.getViewport();
-      this.state.setViewport({ zoom: Math.max(viewport.zoom / 1.2, 0.1) });
+      const state = this.ensureState();
+      const viewport = state.getViewport();
+      state.setViewport({ zoom: Math.max(viewport.zoom / 1.2, 0.1) });
     });
     container.createDiv({ cls: "ui-editor-toolbar-separator" });
     const snapGroup = container.createDiv({ cls: "ui-editor-toolbar-group" });
@@ -1110,17 +2106,21 @@ var UIEditorView = class extends import_obsidian.TextFileView {
   }
   // TextFileView methods
   getViewData() {
-    return this.state.serialize();
+    return this.ensureState().serialize();
   }
   setViewData(data, clear) {
     var _a, _b;
     if (clear) {
       this.clear();
     }
+    const state = this.ensureState();
+    if (this.file) {
+      getEditorStateManager().setActiveFile(this.file.path);
+    }
     try {
       let doc;
       if (!data || data.trim() === "") {
-        doc = this.state.createNewDocument((_a = this.file) == null ? void 0 : _a.basename);
+        doc = state.createNewDocument((_a = this.file) == null ? void 0 : _a.basename);
       } else {
         doc = JSON.parse(data);
         if (!doc.tokens)
@@ -1144,35 +2144,82 @@ var UIEditorView = class extends import_obsidian.TextFileView {
           };
         }
       }
-      this.state.loadDocument(doc, this.file);
-      this.state.setViewport({ panX: 50, panY: 50, zoom: 1 });
+      state.loadDocument(doc, this.file);
+      state.setViewport({ panX: 50, panY: 50, zoom: 1 });
+      this.initializeCanvas();
     } catch (e) {
       console.error("Failed to parse UI document:", e);
-      const doc = this.state.createNewDocument((_b = this.file) == null ? void 0 : _b.basename);
-      this.state.loadDocument(doc, this.file);
+      const doc = state.createNewDocument((_b = this.file) == null ? void 0 : _b.basename);
+      state.loadDocument(doc, this.file);
+      this.initializeCanvas();
     }
   }
   clear() {
-    this.state.clearSelection();
+    this.ensureState().clearSelection();
   }
   onPaneMenu(menu, source) {
     super.onPaneMenu(menu, source);
     menu.addItem((item) => {
       item.setTitle("Reset View").setIcon("refresh-cw").onClick(() => {
-        this.state.setViewport({ panX: 50, panY: 50, zoom: 1 });
+        this.ensureState().setViewport({ panX: 50, panY: 50, zoom: 1 });
       });
     });
+  }
+  /**
+   * Get the canvas interaction handler for clipboard operations
+   */
+  getInteraction() {
+    return this.interaction;
   }
 };
 
 // src/views/NodeTreeView.ts
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 var NODE_TREE_VIEW_TYPE = "ui-node-tree-view";
-var NodeTreeView = class extends import_obsidian2.ItemView {
+var NodeTreeView = class extends import_obsidian3.ItemView {
   constructor(leaf) {
     super(leaf);
+    this.state = null;
     this.treeContainer = null;
-    this.state = getEditorState();
+    this.stateEventHandlers = /* @__PURE__ */ new Map();
+    this.activeStateChangedHandler = null;
+  }
+  /**
+   * Subscribe to events on the current state
+   */
+  subscribeToState(state) {
+    this.unsubscribeFromState();
+    this.state = state;
+    if (!state) {
+      this.refresh();
+      return;
+    }
+    const refreshHandler = () => this.refresh();
+    const selectionHandler = () => this.updateSelection();
+    this.stateEventHandlers.set("document-loaded", refreshHandler);
+    this.stateEventHandlers.set("screen-changed", refreshHandler);
+    this.stateEventHandlers.set("node-added", refreshHandler);
+    this.stateEventHandlers.set("node-removed", refreshHandler);
+    this.stateEventHandlers.set("node-updated", refreshHandler);
+    this.stateEventHandlers.set("selection-changed", selectionHandler);
+    state.on("document-loaded", refreshHandler);
+    state.on("screen-changed", refreshHandler);
+    state.on("node-added", refreshHandler);
+    state.on("node-removed", refreshHandler);
+    state.on("node-updated", refreshHandler);
+    state.on("selection-changed", selectionHandler);
+    this.refresh();
+  }
+  /**
+   * Unsubscribe from current state's events
+   */
+  unsubscribeFromState() {
+    if (!this.state)
+      return;
+    for (const [event, handler] of this.stateEventHandlers) {
+      this.state.off(event, handler);
+    }
+    this.stateEventHandlers.clear();
   }
   getViewType() {
     return NODE_TREE_VIEW_TYPE;
@@ -1190,21 +2237,32 @@ var NodeTreeView = class extends import_obsidian2.ItemView {
     const header = container.createDiv({ cls: "ui-node-tree-header" });
     header.createSpan({ text: "Node Tree", cls: "ui-node-tree-title" });
     this.treeContainer = container.createDiv({ cls: "ui-node-tree-content" });
-    this.state.on("document-loaded", () => this.refresh());
-    this.state.on("screen-changed", () => this.refresh());
-    this.state.on("node-added", () => this.refresh());
-    this.state.on("node-removed", () => this.refresh());
-    this.state.on("node-updated", () => this.refresh());
-    this.state.on("selection-changed", () => this.updateSelection());
-    this.refresh();
+    const manager = getEditorStateManager();
+    this.activeStateChangedHandler = (state) => {
+      this.subscribeToState(state);
+    };
+    manager.on("active-state-changed", this.activeStateChangedHandler);
+    this.subscribeToState(manager.getActiveState());
   }
   async onClose() {
+    this.unsubscribeFromState();
+    if (this.activeStateChangedHandler) {
+      getEditorStateManager().off("active-state-changed", this.activeStateChangedHandler);
+      this.activeStateChangedHandler = null;
+    }
     this.treeContainer = null;
   }
   refresh() {
     if (!this.treeContainer)
       return;
     this.treeContainer.empty();
+    if (!this.state) {
+      this.treeContainer.createSpan({
+        text: "No document loaded",
+        cls: "ui-node-tree-empty"
+      });
+      return;
+    }
     const screen = this.state.getCurrentScreen();
     if (!screen) {
       this.treeContainer.createSpan({
@@ -1228,13 +2286,16 @@ var NodeTreeView = class extends import_obsidian2.ItemView {
         }
       }
       screenSelect.addEventListener("change", () => {
-        this.state.setCurrentScreen(screenSelect.value);
+        var _a;
+        (_a = this.state) == null ? void 0 : _a.setCurrentScreen(screenSelect.value);
       });
     }
     const treeRoot = this.treeContainer.createDiv({ cls: "ui-node-tree-root" });
     this.renderNode(screen.root, treeRoot, 0);
   }
   renderNode(node, container, depth) {
+    if (!this.state)
+      return;
     const isSelected = this.state.isNodeSelected(node.id);
     const hasChildren = node.children && node.children.length > 0;
     const nodeEl = container.createDiv({
@@ -1262,6 +2323,8 @@ var NodeTreeView = class extends import_obsidian2.ItemView {
     const name = node.name || node.type;
     nodeEl.createSpan({ text: name, cls: "ui-node-tree-name" });
     nodeEl.addEventListener("click", (e) => {
+      if (!this.state)
+        return;
       const addToSelection = e.shiftKey || e.ctrlKey || e.metaKey;
       if (addToSelection && this.state.isNodeSelected(node.id)) {
         this.state.deselectNode(node.id);
@@ -1302,7 +2365,7 @@ var NodeTreeView = class extends import_obsidian2.ItemView {
     return icons[type] || "\u25CB";
   }
   updateSelection() {
-    if (!this.treeContainer)
+    if (!this.treeContainer || !this.state)
       return;
     const selectedIds = new Set(this.state.getSelectedNodeIds());
     this.treeContainer.querySelectorAll(".ui-node-tree-item").forEach((el) => {
@@ -1315,13 +2378,43 @@ var NodeTreeView = class extends import_obsidian2.ItemView {
 };
 
 // src/views/PropertiesView.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 var PROPERTIES_VIEW_TYPE = "ui-properties-view";
-var PropertiesView = class extends import_obsidian3.ItemView {
+var PropertiesView = class extends import_obsidian4.ItemView {
   constructor(leaf) {
     super(leaf);
+    this.state = null;
     this.contentContainer = null;
-    this.state = getEditorState();
+    this.stateEventHandlers = /* @__PURE__ */ new Map();
+    this.activeStateChangedHandler = null;
+  }
+  /**
+   * Subscribe to events on the current state
+   */
+  subscribeToState(state) {
+    this.unsubscribeFromState();
+    this.state = state;
+    if (!state) {
+      this.refresh();
+      return;
+    }
+    const refreshHandler = () => this.refresh();
+    this.stateEventHandlers.set("selection-changed", refreshHandler);
+    this.stateEventHandlers.set("node-updated", refreshHandler);
+    state.on("selection-changed", refreshHandler);
+    state.on("node-updated", refreshHandler);
+    this.refresh();
+  }
+  /**
+   * Unsubscribe from current state's events
+   */
+  unsubscribeFromState() {
+    if (!this.state)
+      return;
+    for (const [event, handler] of this.stateEventHandlers) {
+      this.state.off(event, handler);
+    }
+    this.stateEventHandlers.clear();
   }
   getViewType() {
     return PROPERTIES_VIEW_TYPE;
@@ -1341,18 +2434,34 @@ var PropertiesView = class extends import_obsidian3.ItemView {
     this.contentContainer = container.createDiv({
       cls: "ui-properties-content"
     });
-    this.state.on("selection-changed", () => this.refresh());
-    this.state.on("node-updated", () => this.refresh());
-    this.refresh();
+    const manager = getEditorStateManager();
+    this.activeStateChangedHandler = (state) => {
+      this.subscribeToState(state);
+    };
+    manager.on("active-state-changed", this.activeStateChangedHandler);
+    this.subscribeToState(manager.getActiveState());
   }
   async onClose() {
+    this.unsubscribeFromState();
+    if (this.activeStateChangedHandler) {
+      getEditorStateManager().off("active-state-changed", this.activeStateChangedHandler);
+      this.activeStateChangedHandler = null;
+    }
     this.contentContainer = null;
   }
   refresh() {
     if (!this.contentContainer)
       return;
     this.contentContainer.empty();
-    const selectedNode = this.state.getSelectedNode();
+    const state = this.state;
+    if (!state) {
+      this.contentContainer.createSpan({
+        text: "No document loaded",
+        cls: "ui-properties-empty"
+      });
+      return;
+    }
+    const selectedNode = state.getSelectedNode();
     if (!selectedNode) {
       this.contentContainer.createSpan({
         text: "No node selected",
@@ -1362,7 +2471,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
     }
     this.createSection("Node", this.contentContainer, (section) => {
       this.createTextField(section, "Name", selectedNode.name || "", (val) => {
-        this.state.updateNode(selectedNode.id, { name: val });
+        state.updateNode(selectedNode.id, { name: val });
       });
       this.createReadOnlyField(section, "Type", selectedNode.type);
       this.createReadOnlyField(section, "ID", selectedNode.id);
@@ -1371,16 +2480,16 @@ var PropertiesView = class extends import_obsidian3.ItemView {
       const absLayout = selectedNode.layout;
       this.createSection("Layout", this.contentContainer, (section) => {
         this.createNumberField(section, "X", absLayout.x, (val) => {
-          this.state.updateNodeLayout(selectedNode.id, { ...absLayout, x: val });
+          state.updateNodeLayout(selectedNode.id, { ...absLayout, x: val });
         });
         this.createNumberField(section, "Y", absLayout.y, (val) => {
-          this.state.updateNodeLayout(selectedNode.id, { ...absLayout, y: val });
+          state.updateNodeLayout(selectedNode.id, { ...absLayout, y: val });
         });
         this.createNumberField(section, "Width", absLayout.w, (val) => {
-          this.state.updateNodeLayout(selectedNode.id, { ...absLayout, w: val });
+          state.updateNodeLayout(selectedNode.id, { ...absLayout, w: val });
         });
         this.createNumberField(section, "Height", absLayout.h, (val) => {
-          this.state.updateNodeLayout(selectedNode.id, { ...absLayout, h: val });
+          state.updateNodeLayout(selectedNode.id, { ...absLayout, h: val });
         });
       });
     }
@@ -1391,7 +2500,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
         "Background",
         style.background || "",
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, { background: val });
+          state.updateNodeStyle(selectedNode.id, { background: val });
         }
       );
       this.createColorField(
@@ -1399,7 +2508,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
         "Text Color",
         style.textColor || "",
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, { textColor: val });
+          state.updateNodeStyle(selectedNode.id, { textColor: val });
         }
       );
       this.createColorField(
@@ -1407,7 +2516,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
         "Border Color",
         style.borderColor || "",
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, { borderColor: val });
+          state.updateNodeStyle(selectedNode.id, { borderColor: val });
         }
       );
       this.createNumberField(
@@ -1415,7 +2524,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
         "Border Width",
         style.borderWidth || 0,
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, { borderWidth: val });
+          state.updateNodeStyle(selectedNode.id, { borderWidth: val });
         }
       );
       this.createNumberField(
@@ -1423,7 +2532,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
         "Border Radius",
         style.borderRadius || 0,
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, { borderRadius: val });
+          state.updateNodeStyle(selectedNode.id, { borderRadius: val });
         }
       );
       this.createNumberField(
@@ -1431,7 +2540,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
         "Opacity",
         style.opacity !== void 0 ? style.opacity : 1,
         (val) => {
-          this.state.updateNodeStyle(selectedNode.id, {
+          state.updateNodeStyle(selectedNode.id, {
             opacity: Math.min(1, Math.max(0, val))
           });
         }
@@ -1440,12 +2549,12 @@ var PropertiesView = class extends import_obsidian3.ItemView {
     this.createSection("Content", this.contentContainer, (section) => {
       const content = selectedNode.content || {};
       this.createTextField(section, "Text", content.text || "", (val) => {
-        this.state.updateNode(selectedNode.id, {
+        state.updateNode(selectedNode.id, {
           content: { ...content, text: val }
         });
       });
       this.createTextField(section, "Icon", content.icon || "", (val) => {
-        this.state.updateNode(selectedNode.id, {
+        state.updateNode(selectedNode.id, {
           content: { ...content, icon: val }
         });
       });
@@ -1455,7 +2564,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
           "Placeholder",
           content.placeholder || "",
           (val) => {
-            this.state.updateNode(selectedNode.id, {
+            state.updateNode(selectedNode.id, {
               content: { ...content, placeholder: val }
             });
           }
@@ -1463,7 +2572,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
       }
       if (selectedNode.type === "Image") {
         this.createTextField(section, "Source", content.src || "", (val) => {
-          this.state.updateNode(selectedNode.id, {
+          state.updateNode(selectedNode.id, {
             content: { ...content, src: val }
           });
         });
@@ -1472,7 +2581,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
     this.createSection("Meta", this.contentContainer, (section) => {
       const meta = selectedNode.meta || {};
       this.createTextAreaField(section, "Purpose", meta.purpose || "", (val) => {
-        this.state.updateNode(selectedNode.id, {
+        state.updateNode(selectedNode.id, {
           meta: { ...meta, purpose: val }
         });
       });
@@ -1481,7 +2590,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
         "Behavior",
         meta.behavior || "",
         (val) => {
-          this.state.updateNode(selectedNode.id, {
+          state.updateNode(selectedNode.id, {
             meta: { ...meta, behavior: val }
           });
         }
@@ -1492,13 +2601,13 @@ var PropertiesView = class extends import_obsidian3.ItemView {
         (meta.states || []).join(", "),
         (val) => {
           const states = val.split(",").map((s) => s.trim()).filter((s) => s);
-          this.state.updateNode(selectedNode.id, {
+          state.updateNode(selectedNode.id, {
             meta: { ...meta, states }
           });
         }
       );
       this.createTextAreaField(section, "Notes", meta.notes || "", (val) => {
-        this.state.updateNode(selectedNode.id, {
+        state.updateNode(selectedNode.id, {
           meta: { ...meta, notes: val }
         });
       });
@@ -1508,7 +2617,7 @@ var PropertiesView = class extends import_obsidian3.ItemView {
         (meta.related || []).join(", "),
         (val) => {
           const related = val.split(",").map((s) => s.trim()).filter((s) => s);
-          this.state.updateNode(selectedNode.id, {
+          state.updateNode(selectedNode.id, {
             meta: { ...meta, related }
           });
         }
@@ -1608,170 +2717,8 @@ var PropertiesView = class extends import_obsidian3.ItemView {
   }
 };
 
-// src/utils/MarkdownGenerator.ts
-var MarkdownGenerator = class {
-  /**
-   * Generate full Markdown documentation for a UI document
-   */
-  static generate(doc) {
-    const lines = [];
-    lines.push(`# ${doc.name || "UI Design"}`);
-    lines.push("");
-    if (doc.description) {
-      lines.push(doc.description);
-      lines.push("");
-    }
-    if (Object.keys(doc.tokens).length > 0) {
-      lines.push("## Design Tokens");
-      lines.push("");
-      lines.push(this.generateTokensTable(doc.tokens));
-      lines.push("");
-    }
-    const screenIds = Object.keys(doc.screens);
-    if (screenIds.length > 0) {
-      lines.push("## Screens");
-      lines.push("");
-      for (const screenId of screenIds) {
-        const screen = doc.screens[screenId];
-        lines.push(...this.generateScreenSection(screen));
-        lines.push("");
-      }
-    }
-    const componentIds = Object.keys(doc.components);
-    if (componentIds.length > 0) {
-      lines.push("## Components");
-      lines.push("");
-      for (const compId of componentIds) {
-        const comp = doc.components[compId];
-        lines.push(`### ${comp.name}`);
-        lines.push("");
-        if (comp.description) {
-          lines.push(comp.description);
-          lines.push("");
-        }
-        lines.push(...this.generateNodeTree(comp.root, 0));
-        lines.push("");
-      }
-    }
-    return lines.join("\n");
-  }
-  /**
-   * Generate a Markdown table for design tokens
-   */
-  static generateTokensTable(tokens) {
-    const lines = [];
-    lines.push("| Token | Value |");
-    lines.push("|-------|-------|");
-    const grouped = {};
-    for (const [name, value] of Object.entries(tokens)) {
-      const prefix = name.split(".")[0];
-      if (!grouped[prefix]) {
-        grouped[prefix] = [];
-      }
-      grouped[prefix].push({ name, value });
-    }
-    for (const prefix of Object.keys(grouped).sort()) {
-      for (const { name, value } of grouped[prefix]) {
-        const displayValue = typeof value === "string" && value.startsWith("#") ? `\`${value}\` ${this.colorSwatch(value)}` : `\`${value}\``;
-        lines.push(`| \`${name}\` | ${displayValue} |`);
-      }
-    }
-    return lines.join("\n");
-  }
-  /**
-   * Generate a color swatch indicator for hex colors
-   */
-  static colorSwatch(hex) {
-    return `<span style="display:inline-block;width:12px;height:12px;background:${hex};border:1px solid #ccc;border-radius:2px;"></span>`;
-  }
-  /**
-   * Generate documentation section for a screen
-   */
-  static generateScreenSection(screen) {
-    const lines = [];
-    lines.push(`### ${screen.name || screen.id}`);
-    lines.push("");
-    if (screen.description) {
-      lines.push(screen.description);
-      lines.push("");
-    }
-    if (screen.root.layout.mode === "absolute") {
-      lines.push(`**Dimensions:** ${screen.root.layout.w} \xD7 ${screen.root.layout.h}`);
-      lines.push("");
-    }
-    lines.push("#### Elements");
-    lines.push("");
-    lines.push(...this.generateNodeTree(screen.root, 0));
-    return lines;
-  }
-  /**
-   * Generate a tree representation of nodes
-   */
-  static generateNodeTree(node, depth) {
-    var _a, _b, _c;
-    const lines = [];
-    const indent = "  ".repeat(depth);
-    const bullet = depth === 0 ? "" : "- ";
-    const name = node.name || node.type;
-    const typeTag = node.name ? ` \`${node.type}\`` : "";
-    if (depth === 0) {
-      lines.push(`**${name}**${typeTag}`);
-    } else {
-      lines.push(`${indent}${bullet}**${name}**${typeTag}`);
-    }
-    if (((_a = node.meta) == null ? void 0 : _a.purpose) || ((_b = node.meta) == null ? void 0 : _b.behavior)) {
-      if (node.meta.purpose) {
-        lines.push(`${indent}  - *Purpose:* ${node.meta.purpose}`);
-      }
-      if (node.meta.behavior) {
-        lines.push(`${indent}  - *Behavior:* ${node.meta.behavior}`);
-      }
-      if (node.meta.states && node.meta.states.length > 0) {
-        lines.push(`${indent}  - *States:* ${node.meta.states.join(", ")}`);
-      }
-      if (node.meta.notes) {
-        lines.push(`${indent}  - *Notes:* ${node.meta.notes}`);
-      }
-    }
-    if ((_c = node.content) == null ? void 0 : _c.text) {
-      lines.push(`${indent}  - *Text:* "${node.content.text}"`);
-    }
-    if (node.children && node.children.length > 0) {
-      for (const child of node.children) {
-        lines.push(...this.generateNodeTree(child, depth + 1));
-      }
-    }
-    return lines;
-  }
-  /**
-   * Generate a summary of all elements with their purposes
-   */
-  static generateElementSummary(doc) {
-    const lines = [];
-    lines.push("## Element Summary");
-    lines.push("");
-    lines.push("| Element | Type | Purpose |");
-    lines.push("|---------|------|---------|");
-    for (const screen of Object.values(doc.screens)) {
-      this.collectElements(screen.root, lines);
-    }
-    return lines.join("\n");
-  }
-  static collectElements(node, lines) {
-    var _a;
-    const name = node.name || node.id;
-    const purpose = ((_a = node.meta) == null ? void 0 : _a.purpose) || "-";
-    lines.push(`| ${name} | ${node.type} | ${purpose} |`);
-    if (node.children) {
-      for (const child of node.children) {
-        this.collectElements(child, lines);
-      }
-    }
-  }
-};
-
 // src/main.ts
-var UIDesignerPlugin = class extends import_obsidian4.Plugin {
+var UIDesignerPlugin = class extends import_obsidian5.Plugin {
   async onload() {
     this.registerView(
       UI_EDITOR_VIEW_TYPE,
@@ -1797,11 +2744,6 @@ var UIDesignerPlugin = class extends import_obsidian4.Plugin {
       callback: () => this.createNewUIFile()
     });
     this.addCommand({
-      id: "generate-markdown",
-      name: "Generate Markdown documentation",
-      callback: () => this.generateMarkdown()
-    });
-    this.addCommand({
       id: "open-node-tree",
       name: "Open node tree panel",
       callback: () => this.activateView(NODE_TREE_VIEW_TYPE, "left")
@@ -1811,40 +2753,135 @@ var UIDesignerPlugin = class extends import_obsidian4.Plugin {
       name: "Open properties panel",
       callback: () => this.activateView(PROPERTIES_VIEW_TYPE, "right")
     });
+    this.addCommand({
+      id: "copy-selection",
+      name: "Copy selected components",
+      checkCallback: (checking) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView)
+          return false;
+        const interaction = uiView.getInteraction();
+        const state = uiView.getEditorState();
+        const hasSelection = state.getSelectedNodeIds().length > 0;
+        if (checking) {
+          return hasSelection;
+        }
+        if (interaction && hasSelection) {
+          interaction.copySelection();
+        }
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "cut-selection",
+      name: "Cut selected components",
+      checkCallback: (checking) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView)
+          return false;
+        const interaction = uiView.getInteraction();
+        const state = uiView.getEditorState();
+        const hasSelection = state.getSelectedNodeIds().length > 0;
+        if (checking) {
+          return hasSelection;
+        }
+        if (interaction && hasSelection) {
+          interaction.cutSelection();
+        }
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "paste-components",
+      name: "Paste components",
+      checkCallback: (checking) => {
+        var _a;
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView)
+          return false;
+        const interaction = uiView.getInteraction();
+        if (checking) {
+          return (_a = interaction == null ? void 0 : interaction.hasClipboardContent()) != null ? _a : false;
+        }
+        if (interaction) {
+          interaction.pasteAtCursor();
+        }
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "duplicate-selection",
+      name: "Duplicate selected components",
+      checkCallback: (checking) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView)
+          return false;
+        const interaction = uiView.getInteraction();
+        const state = uiView.getEditorState();
+        const hasSelection = state.getSelectedNodeIds().length > 0;
+        if (checking) {
+          return hasSelection;
+        }
+        if (interaction && hasSelection) {
+          interaction.duplicateSelection();
+        }
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "undo",
+      name: "Undo",
+      checkCallback: (checking) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView)
+          return false;
+        const state = uiView.getEditorState();
+        if (checking) {
+          return state.canUndo();
+        }
+        state.undo();
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "redo",
+      name: "Redo",
+      checkCallback: (checking) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView)
+          return false;
+        const state = uiView.getEditorState();
+        if (checking) {
+          return state.canRedo();
+        }
+        state.redo();
+        return true;
+      }
+    });
     this.app.workspace.onLayoutReady(() => {
       this.registerEvent(
         this.app.workspace.on("active-leaf-change", (leaf) => {
           if ((leaf == null ? void 0 : leaf.view.getViewType()) === UI_EDITOR_VIEW_TYPE) {
+            const uiView = leaf.view;
+            if (uiView.file) {
+              getEditorStateManager().setActiveFile(uiView.file.path);
+            }
             this.ensurePanelsOpen();
+          } else {
+            const hasActiveUIEditor = this.app.workspace.getLeavesOfType(UI_EDITOR_VIEW_TYPE).some((l) => l === this.app.workspace.getLeaf());
+            if (!hasActiveUIEditor) {
+              getEditorStateManager().setActiveFile(null);
+            }
           }
         })
       );
     });
   }
   onunload() {
-    resetEditorState();
+    resetEditorStateManager();
     this.app.workspace.detachLeavesOfType(UI_EDITOR_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(NODE_TREE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(PROPERTIES_VIEW_TYPE);
-  }
-  async generateMarkdown() {
-    const state = getEditorState();
-    const doc = state.getDocument();
-    const file = state.getFile();
-    if (!doc || !file) {
-      new import_obsidian4.Notice("No UI design document open");
-      return;
-    }
-    const markdown = MarkdownGenerator.generate(doc);
-    const mdPath = file.path.replace(/\.uidesign$/, ".md");
-    const existingFile = this.app.vault.getAbstractFileByPath(mdPath);
-    if (existingFile instanceof import_obsidian4.TFile) {
-      await this.app.vault.modify(existingFile, markdown);
-      new import_obsidian4.Notice(`Updated: ${mdPath}`);
-    } else {
-      await this.app.vault.create(mdPath, markdown);
-      new import_obsidian4.Notice(`Created: ${mdPath}`);
-    }
   }
   async createNewUIFile() {
     var _a;
@@ -1926,5 +2963,12 @@ var UIDesignerPlugin = class extends import_obsidian4.Plugin {
         await leftLeaf.setViewState({ type: NODE_TREE_VIEW_TYPE, active: true });
       }
     }
+  }
+  /**
+   * Get the active UI Editor view if one is open
+   */
+  getActiveUIEditorView() {
+    const activeView = this.app.workspace.getActiveViewOfType(UIEditorView);
+    return activeView;
   }
 };
