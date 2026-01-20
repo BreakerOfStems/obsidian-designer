@@ -11,6 +11,7 @@ import {
   getDocumentVersion,
   CURRENT_SCHEMA_VERSION,
 } from "./migrations";
+import { exportLLMSpecToJSON } from "./export";
 
 export default class UIDesignerPlugin extends Plugin {
   async onload(): Promise<void> {
@@ -253,6 +254,27 @@ export default class UIDesignerPlugin extends Plugin {
       },
     });
 
+    // Export LLM Spec command
+    this.addCommand({
+      id: "export-llm-spec",
+      name: "Export LLM Spec",
+      checkCallback: (checking) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView) return false;
+
+        const state = uiView.getEditorState();
+        const doc = state.getDocument();
+        if (!doc) return false;
+
+        if (checking) {
+          return true;
+        }
+
+        this.exportLLMSpec(uiView);
+        return true;
+      },
+    });
+
     // When layout is ready, restore side panels if they were open
     this.app.workspace.onLayoutReady(() => {
       this.registerEvent(
@@ -420,6 +442,51 @@ export default class UIDesignerPlugin extends Plugin {
   private getActiveUIEditorView(): UIEditorView | null {
     const activeView = this.app.workspace.getActiveViewOfType(UIEditorView);
     return activeView;
+  }
+
+  /**
+   * Export the current document as an LLM-friendly spec
+   */
+  private async exportLLMSpec(uiView: UIEditorView): Promise<void> {
+    const state = uiView.getEditorState();
+    const doc = state.getDocument();
+    const file = state.getFile();
+
+    if (!doc || !file) {
+      new Notice("No document loaded", 3000);
+      return;
+    }
+
+    try {
+      // Generate the LLM spec JSON
+      const llmJson = exportLLMSpecToJSON(doc);
+
+      // Create output filename based on source file
+      const baseName = file.basename;
+      const folder = file.parent?.path || "";
+      let outputName = `${baseName}.llm.json`;
+      let counter = 1;
+
+      // Find unique filename
+      while (
+        this.app.vault.getAbstractFileByPath(
+          folder ? `${folder}/${outputName}` : outputName
+        )
+      ) {
+        outputName = `${baseName}.llm-${counter}.json`;
+        counter++;
+      }
+
+      const outputPath = folder ? `${folder}/${outputName}` : outputName;
+
+      // Write the file
+      await this.app.vault.create(outputPath, llmJson);
+
+      new Notice(`LLM Spec exported to ${outputName}`, 5000);
+    } catch (e) {
+      console.error("UI Designer: Failed to export LLM spec", e);
+      new Notice("Failed to export LLM spec. See console for details.", 5000);
+    }
   }
 
   /**
