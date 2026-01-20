@@ -284,6 +284,43 @@ export class EditorState {
     this.emit("node-updated", nodeId, { style: node.style });
   }
 
+  updateNodeBehavior(nodeId: string, behavior: UINode["behavior"], description: string = "Update behavior"): void {
+    const node = this.findNodeById(nodeId);
+    if (!node || !this.data.document) return;
+
+    // Set to undefined if the behavior object is empty
+    const isEmpty = !behavior || (
+      !behavior.events?.length &&
+      behavior.enabled === undefined &&
+      behavior.interactionMode === undefined &&
+      !behavior.animations?.length
+    );
+    node.behavior = isEmpty ? undefined : behavior;
+    this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
+    this.emit("node-updated", nodeId, { behavior: node.behavior });
+  }
+
+  updateNodeBinding(nodeId: string, bind: UINode["bind"], description: string = "Update binding"): void {
+    const node = this.findNodeById(nodeId);
+    if (!node || !this.data.document) return;
+
+    // Set to undefined if the binding object is empty
+    const isEmpty = !bind || (
+      !bind.path &&
+      !bind.format &&
+      !bind.formatString &&
+      !bind.validation?.length &&
+      bind.defaultValue === undefined &&
+      !bind.direction &&
+      !bind.transform
+    );
+    node.bind = isEmpty ? undefined : bind;
+    this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
+    this.emit("node-updated", nodeId, { bind: node.bind });
+  }
+
   // Token management
   updateToken(key: string, value: string | number, description: string = "Update token"): void {
     if (!this.data.document) return;

@@ -1,5 +1,30 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
-import { UINode, NodeStyle, NodeMeta, NodeContent, AbsoluteLayout, AnchoredLayout, DesignTokens, getTokensByCategory, ElementRole, ELEMENT_ROLES, getDefaultMeta, A11yMeta } from "../types/ui-schema";
+import {
+  UINode,
+  NodeStyle,
+  NodeMeta,
+  NodeContent,
+  NodeBehavior,
+  NodeBinding,
+  BehaviorEvent,
+  BehaviorEventType,
+  BindValidation,
+  BindValidationType,
+  BindFormat,
+  AbsoluteLayout,
+  AnchoredLayout,
+  DesignTokens,
+  getTokensByCategory,
+  ElementRole,
+  ELEMENT_ROLES,
+  BEHAVIOR_EVENT_TYPES,
+  BIND_FORMATS,
+  BIND_VALIDATION_TYPES,
+  getDefaultMeta,
+  getDefaultBehavior,
+  getDefaultBinding,
+  A11yMeta,
+} from "../types/ui-schema";
 import { EditorState, getEditorStateManager } from "../state/EditorState";
 
 export const PROPERTIES_VIEW_TYPE = "ui-properties-view";
@@ -428,6 +453,177 @@ export class PropertiesView extends ItemView {
           });
         });
       }
+    });
+
+    // Behavior section - runtime interactions and events
+    this.createSection("Behavior", this.contentContainer, (section) => {
+      const behavior = selectedNode.behavior || {};
+
+      // Enabled toggle
+      this.createSelectField(
+        section,
+        "Enabled",
+        behavior.enabled === false ? "false" : "true",
+        [
+          { value: "true", label: "Yes" },
+          { value: "false", label: "No" },
+        ],
+        (val) => {
+          state.updateNodeBehavior(selectedNode.id, {
+            ...behavior,
+            enabled: val === "true",
+          });
+        }
+      );
+
+      // Interaction mode (for containers)
+      if (["Container", "Card", "Modal", "List"].includes(selectedNode.type)) {
+        this.createSelectField(
+          section,
+          "Interaction",
+          behavior.interactionMode || "passthrough",
+          [
+            { value: "none", label: "None" },
+            { value: "passthrough", label: "Passthrough" },
+            { value: "block", label: "Block" },
+          ],
+          (val) => {
+            state.updateNodeBehavior(selectedNode.id, {
+              ...behavior,
+              interactionMode: val as "none" | "passthrough" | "block",
+            });
+          }
+        );
+      }
+
+      // Events list
+      const events = behavior.events || [];
+      this.createEventsListField(section, events, (newEvents) => {
+        state.updateNodeBehavior(selectedNode.id, {
+          ...behavior,
+          events: newEvents,
+        });
+      });
+
+      // Reset to default behavior
+      this.createButtonField(
+        section,
+        "Reset to defaults",
+        () => {
+          const defaultBehavior = getDefaultBehavior(selectedNode.type);
+          state.updateNodeBehavior(selectedNode.id, defaultBehavior || {});
+        }
+      );
+    });
+
+    // Binding section - data contract and field mapping
+    this.createSection("Binding", this.contentContainer, (section) => {
+      const bind = selectedNode.bind || {};
+
+      // Data path
+      this.createTextField(
+        section,
+        "Path",
+        bind.path || "",
+        (val) => {
+          state.updateNodeBinding(selectedNode.id, {
+            ...bind,
+            path: val || undefined,
+          });
+        }
+      );
+
+      // Format
+      this.createSelectField(
+        section,
+        "Format",
+        bind.format || "text",
+        BIND_FORMATS.map(f => ({ value: f.value, label: f.label })),
+        (val) => {
+          state.updateNodeBinding(selectedNode.id, {
+            ...bind,
+            format: val as BindFormat,
+          });
+        }
+      );
+
+      // Format string (for custom formats)
+      if (bind.format === "custom" || bind.format === "date" || bind.format === "datetime" || bind.format === "currency") {
+        this.createTextField(
+          section,
+          "Format String",
+          bind.formatString || "",
+          (val) => {
+            state.updateNodeBinding(selectedNode.id, {
+              ...bind,
+              formatString: val || undefined,
+            });
+          }
+        );
+      }
+
+      // Direction
+      this.createSelectField(
+        section,
+        "Direction",
+        bind.direction || "read",
+        [
+          { value: "read", label: "Read Only" },
+          { value: "write", label: "Write Only" },
+          { value: "two-way", label: "Two-Way" },
+        ],
+        (val) => {
+          state.updateNodeBinding(selectedNode.id, {
+            ...bind,
+            direction: val as "read" | "write" | "two-way",
+          });
+        }
+      );
+
+      // Default value
+      this.createTextField(
+        section,
+        "Default",
+        bind.defaultValue !== undefined ? String(bind.defaultValue) : "",
+        (val) => {
+          state.updateNodeBinding(selectedNode.id, {
+            ...bind,
+            defaultValue: val || undefined,
+          });
+        }
+      );
+
+      // Transform function name
+      this.createTextField(
+        section,
+        "Transform",
+        bind.transform || "",
+        (val) => {
+          state.updateNodeBinding(selectedNode.id, {
+            ...bind,
+            transform: val || undefined,
+          });
+        }
+      );
+
+      // Validation rules
+      const validation = bind.validation || [];
+      this.createValidationListField(section, validation, (newValidation) => {
+        state.updateNodeBinding(selectedNode.id, {
+          ...bind,
+          validation: newValidation.length > 0 ? newValidation : undefined,
+        });
+      });
+
+      // Reset to default binding
+      this.createButtonField(
+        section,
+        "Reset to defaults",
+        () => {
+          const defaultBinding = getDefaultBinding(selectedNode.type);
+          state.updateNodeBinding(selectedNode.id, defaultBinding || {});
+        }
+      );
     });
 
     // Meta section (critical per spec)
@@ -967,6 +1163,194 @@ export class PropertiesView extends ItemView {
           onChange(val);
         }
       }
+    });
+  }
+
+  /**
+   * Create a list field for editing behavior events
+   */
+  private createEventsListField(
+    parent: HTMLElement,
+    events: BehaviorEvent[],
+    onChange: (events: BehaviorEvent[]) => void
+  ): void {
+    const container = parent.createDiv({ cls: "ui-properties-list-container" });
+    container.createSpan({ text: "Events", cls: "ui-properties-label ui-properties-list-label" });
+
+    const listEl = container.createDiv({ cls: "ui-properties-list" });
+
+    // Render existing events
+    events.forEach((event, index) => {
+      const itemEl = listEl.createDiv({ cls: "ui-properties-list-item" });
+
+      // Event type dropdown
+      const typeSelect = itemEl.createEl("select", {
+        cls: "ui-properties-select ui-properties-list-select",
+      });
+      for (const eventType of BEHAVIOR_EVENT_TYPES) {
+        const opt = typeSelect.createEl("option", {
+          value: eventType.value,
+          text: eventType.label,
+        });
+        if (eventType.value === event.type) {
+          opt.selected = true;
+        }
+      }
+
+      // Event name input
+      const nameInput = itemEl.createEl("input", {
+        type: "text",
+        value: event.name,
+        cls: "ui-properties-input ui-properties-list-input",
+        attr: { placeholder: "Handler name" },
+      });
+
+      // Payload hint input (smaller)
+      const hintInput = itemEl.createEl("input", {
+        type: "text",
+        value: event.payloadHint || "",
+        cls: "ui-properties-input ui-properties-list-input-small",
+        attr: { placeholder: "Payload hint" },
+      });
+
+      // Remove button
+      const removeBtn = itemEl.createEl("button", {
+        text: "×",
+        cls: "ui-properties-list-remove",
+      });
+
+      typeSelect.addEventListener("change", () => {
+        const newEvents = [...events];
+        newEvents[index] = { ...newEvents[index], type: typeSelect.value as BehaviorEventType };
+        onChange(newEvents);
+      });
+
+      nameInput.addEventListener("change", () => {
+        const newEvents = [...events];
+        newEvents[index] = { ...newEvents[index], name: nameInput.value };
+        onChange(newEvents);
+      });
+
+      hintInput.addEventListener("change", () => {
+        const newEvents = [...events];
+        newEvents[index] = {
+          ...newEvents[index],
+          payloadHint: hintInput.value || undefined,
+        };
+        onChange(newEvents);
+      });
+
+      removeBtn.addEventListener("click", () => {
+        const newEvents = events.filter((_, i) => i !== index);
+        onChange(newEvents);
+      });
+    });
+
+    // Add event button
+    const addBtn = container.createEl("button", {
+      text: "+ Add Event",
+      cls: "ui-properties-list-add",
+    });
+    addBtn.addEventListener("click", () => {
+      const newEvents = [...events, { type: "click" as BehaviorEventType, name: "onClick" }];
+      onChange(newEvents);
+    });
+  }
+
+  /**
+   * Create a list field for editing validation rules
+   */
+  private createValidationListField(
+    parent: HTMLElement,
+    validation: BindValidation[],
+    onChange: (validation: BindValidation[]) => void
+  ): void {
+    const container = parent.createDiv({ cls: "ui-properties-list-container" });
+    container.createSpan({ text: "Validation", cls: "ui-properties-label ui-properties-list-label" });
+
+    const listEl = container.createDiv({ cls: "ui-properties-list" });
+
+    // Render existing validation rules
+    validation.forEach((rule, index) => {
+      const itemEl = listEl.createDiv({ cls: "ui-properties-list-item" });
+
+      // Validation type dropdown
+      const typeSelect = itemEl.createEl("select", {
+        cls: "ui-properties-select ui-properties-list-select",
+      });
+      for (const valType of BIND_VALIDATION_TYPES) {
+        const opt = typeSelect.createEl("option", {
+          value: valType.value,
+          text: valType.label,
+        });
+        if (valType.value === rule.type) {
+          opt.selected = true;
+        }
+      }
+
+      // Value input (for rules that need a value like minLength, pattern)
+      const valueInput = itemEl.createEl("input", {
+        type: "text",
+        value: rule.value !== undefined ? String(rule.value) : "",
+        cls: "ui-properties-input ui-properties-list-input-small",
+        attr: { placeholder: "Value" },
+      });
+
+      // Message input
+      const msgInput = itemEl.createEl("input", {
+        type: "text",
+        value: rule.message || "",
+        cls: "ui-properties-input ui-properties-list-input",
+        attr: { placeholder: "Error message" },
+      });
+
+      // Remove button
+      const removeBtn = itemEl.createEl("button", {
+        text: "×",
+        cls: "ui-properties-list-remove",
+      });
+
+      typeSelect.addEventListener("change", () => {
+        const newValidation = [...validation];
+        newValidation[index] = { ...newValidation[index], type: typeSelect.value as BindValidationType };
+        onChange(newValidation);
+      });
+
+      valueInput.addEventListener("change", () => {
+        const newValidation = [...validation];
+        const val = valueInput.value;
+        // Try to parse as number if it looks like one
+        const numVal = parseFloat(val);
+        newValidation[index] = {
+          ...newValidation[index],
+          value: val ? (isNaN(numVal) ? val : numVal) : undefined,
+        };
+        onChange(newValidation);
+      });
+
+      msgInput.addEventListener("change", () => {
+        const newValidation = [...validation];
+        newValidation[index] = {
+          ...newValidation[index],
+          message: msgInput.value || undefined,
+        };
+        onChange(newValidation);
+      });
+
+      removeBtn.addEventListener("click", () => {
+        const newValidation = validation.filter((_, i) => i !== index);
+        onChange(newValidation);
+      });
+    });
+
+    // Add validation rule button
+    const addBtn = container.createEl("button", {
+      text: "+ Add Rule",
+      cls: "ui-properties-list-add",
+    });
+    addBtn.addEventListener("click", () => {
+      const newValidation = [...validation, { type: "required" as BindValidationType }];
+      onChange(newValidation);
     });
   }
 }

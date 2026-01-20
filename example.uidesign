@@ -172,6 +172,23 @@
               "purpose": "Email address input field",
               "behavior": "Validates email format on blur",
               "states": ["default", "focused", "error", "valid"]
+            },
+            "behavior": {
+              "events": [
+                { "type": "change", "name": "onEmailChange", "payloadHint": "{ value: string }" },
+                { "type": "focus", "name": "onEmailFocus" },
+                { "type": "blur", "name": "onEmailBlur" }
+              ],
+              "enabled": true
+            },
+            "bind": {
+              "path": "user.email",
+              "format": "text",
+              "direction": "two-way",
+              "validation": [
+                { "type": "required", "message": "Email is required" },
+                { "type": "email", "message": "Please enter a valid email address" }
+              ]
             }
           },
           {
@@ -204,6 +221,23 @@
               "purpose": "Password input field",
               "behavior": "Obscures text, shows toggle for visibility",
               "states": ["default", "focused", "error"]
+            },
+            "behavior": {
+              "events": [
+                { "type": "change", "name": "onPasswordChange", "payloadHint": "{ value: string }" },
+                { "type": "focus", "name": "onPasswordFocus" },
+                { "type": "blur", "name": "onPasswordBlur" }
+              ],
+              "enabled": true
+            },
+            "bind": {
+              "path": "user.password",
+              "format": "text",
+              "direction": "two-way",
+              "validation": [
+                { "type": "required", "message": "Password is required" },
+                { "type": "minLength", "value": 8, "message": "Password must be at least 8 characters" }
+              ]
             }
           },
           {
@@ -241,6 +275,12 @@
               "states": ["default", "hover", "loading", "disabled"],
               "notes": "Disabled until both email and password are valid",
               "related": ["auth_flow", "error_handling"]
+            },
+            "behavior": {
+              "events": [
+                { "type": "click", "name": "onLoginSubmit", "payloadHint": "{ email: string, password: string }" }
+              ],
+              "enabled": true
             }
           },
           {
