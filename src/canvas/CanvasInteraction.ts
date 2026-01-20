@@ -1,7 +1,7 @@
 import { Menu } from "obsidian";
 import { EditorState } from "../state/EditorState";
 import { CanvasRenderer } from "./CanvasRenderer";
-import { createNode, NodeType } from "../types/ui-schema";
+import { createNode, NodeType, AnchoredLayout } from "../types/ui-schema";
 import { ClipboardService } from "../clipboard/ClipboardService";
 
 type DragMode = "none" | "pan" | "move" | "resize";
@@ -12,6 +12,10 @@ interface NodeStartPosition {
   y: number;
   w: number;
   h: number;
+  layoutMode: "absolute" | "anchored";
+  // For anchored layout
+  anchoredPos?: [number, number];
+  sizeDelta?: [number, number];
 }
 
 interface DragState {
@@ -196,14 +200,15 @@ export class CanvasInteraction {
     // For each selected node, find what container it should belong to
     for (const nodeId of selectedIds) {
       const node = this.state.findNodeById(nodeId);
-      if (!node || node.layout.mode !== "absolute") continue;
+      if (!node) continue;
+      if (node.layout.mode !== "absolute" && node.layout.mode !== "anchored") continue;
 
       // Get the center of the node in world coordinates
       const absolutePos = this.state.getAbsolutePosition(nodeId);
       if (!absolutePos) continue;
 
-      const nodeCenterX = absolutePos.x + node.layout.w / 2;
-      const nodeCenterY = absolutePos.y + node.layout.h / 2;
+      const nodeCenterX = absolutePos.x + absolutePos.w / 2;
+      const nodeCenterY = absolutePos.y + absolutePos.h / 2;
 
       // Find the deepest container at the node's center, excluding selected nodes
       const targetContainerId = this.state.findContainerAtPosition(
@@ -501,13 +506,30 @@ export class CanvasInteraction {
     const selectedNodesStart: NodeStartPosition[] = [];
     for (const id of selectedIds) {
       const node = this.state.findNodeById(id);
-      if (node && node.layout.mode === "absolute") {
+      if (!node) continue;
+
+      if (node.layout.mode === "absolute") {
         selectedNodesStart.push({
           id: node.id,
           x: node.layout.x,
           y: node.layout.y,
           w: node.layout.w,
           h: node.layout.h,
+          layoutMode: "absolute",
+        });
+      } else if (node.layout.mode === "anchored") {
+        const anchoredLayout = node.layout as AnchoredLayout;
+        // Get absolute position for reference
+        const absPos = this.state.getAbsolutePosition(node.id);
+        selectedNodesStart.push({
+          id: node.id,
+          x: absPos?.x || 0,
+          y: absPos?.y || 0,
+          w: absPos?.w || 0,
+          h: absPos?.h || 0,
+          layoutMode: "anchored",
+          anchoredPos: [...anchoredLayout.anchoredPos],
+          sizeDelta: [...anchoredLayout.sizeDelta],
         });
       }
     }
@@ -546,24 +568,56 @@ export class CanvasInteraction {
     // Move all selected nodes by the same delta
     for (const startPos of this.drag.selectedNodesStart) {
       const node = this.state.findNodeById(startPos.id);
-      if (!node || node.layout.mode !== "absolute") continue;
+      if (!node) continue;
 
-      this.state.updateNodeLayout(startPos.id, {
-        mode: "absolute",
-        x: this.snap(startPos.x + dx),
-        y: this.snap(startPos.y + dy),
-        w: startPos.w,
-        h: startPos.h,
-      });
+      if (startPos.layoutMode === "absolute" && node.layout.mode === "absolute") {
+        this.state.updateNodeLayout(startPos.id, {
+          mode: "absolute",
+          x: this.snap(startPos.x + dx),
+          y: this.snap(startPos.y + dy),
+          w: startPos.w,
+          h: startPos.h,
+        });
+      } else if (startPos.layoutMode === "anchored" && node.layout.mode === "anchored" && startPos.anchoredPos) {
+        // For anchored layout, update the anchoredPos
+        const anchoredLayout = node.layout as AnchoredLayout;
+        this.state.updateNodeLayout(startPos.id, {
+          ...anchoredLayout,
+          anchoredPos: [
+            this.snap(startPos.anchoredPos[0] + dx),
+            this.snap(startPos.anchoredPos[1] + dy),
+          ],
+        });
+      }
     }
   }
 
   private startResize(x: number, y: number, handle: string): void {
     const node = this.state.getSelectedNode();
-    if (!node || node.layout.mode !== "absolute") return;
+    if (!node) return;
+    if (node.layout.mode !== "absolute" && node.layout.mode !== "anchored") return;
 
     // Start a batch so the entire resize operation is one undo step
     this.state.startBatch("Resize");
+
+    // Get absolute position for both layout types
+    const absPos = this.state.getAbsolutePosition(node.id);
+
+    // Build selectedNodesStart to track layout mode and anchored values
+    const startPos: NodeStartPosition = {
+      id: node.id,
+      x: absPos?.x || 0,
+      y: absPos?.y || 0,
+      w: absPos?.w || 100,
+      h: absPos?.h || 100,
+      layoutMode: node.layout.mode as "absolute" | "anchored",
+    };
+
+    if (node.layout.mode === "anchored") {
+      const anchoredLayout = node.layout as AnchoredLayout;
+      startPos.anchoredPos = [...anchoredLayout.anchoredPos];
+      startPos.sizeDelta = [...anchoredLayout.sizeDelta];
+    }
 
     this.drag = {
       mode: "resize",
@@ -571,29 +625,32 @@ export class CanvasInteraction {
       startY: y,
       startPanX: 0,
       startPanY: 0,
-      startNodeX: node.layout.x,
-      startNodeY: node.layout.y,
-      startNodeW: node.layout.w,
-      startNodeH: node.layout.h,
+      startNodeX: startPos.x,
+      startNodeY: startPos.y,
+      startNodeW: startPos.w,
+      startNodeH: startPos.h,
       resizeHandle: handle,
-      selectedNodesStart: [],
+      selectedNodesStart: [startPos],
     };
     this.updateResizeCursor(handle);
   }
 
   private doResize(x: number, y: number): void {
     const node = this.state.getSelectedNode();
-    if (!node || node.layout.mode !== "absolute" || !this.drag.resizeHandle)
-      return;
+    if (!node || !this.drag.resizeHandle) return;
+    if (node.layout.mode !== "absolute" && node.layout.mode !== "anchored") return;
+
+    const startPos = this.drag.selectedNodesStart[0];
+    if (!startPos) return;
 
     const viewport = this.state.getViewport();
     const dx = (x - this.drag.startX) / viewport.zoom;
     const dy = (y - this.drag.startY) / viewport.zoom;
 
-    let newX = this.drag.startNodeX;
-    let newY = this.drag.startNodeY;
     let newW = this.drag.startNodeW;
     let newH = this.drag.startNodeH;
+    let offsetX = 0; // Movement needed for position adjustment
+    let offsetY = 0;
 
     const handle = this.drag.resizeHandle;
 
@@ -604,7 +661,7 @@ export class CanvasInteraction {
     if (handle.includes("w")) {
       const maxDx = this.drag.startNodeW - 20;
       const clampedDx = Math.min(dx, maxDx);
-      newX = this.drag.startNodeX + clampedDx;
+      offsetX = clampedDx;
       newW = this.drag.startNodeW - clampedDx;
     }
 
@@ -615,17 +672,36 @@ export class CanvasInteraction {
     if (handle.includes("n")) {
       const maxDy = this.drag.startNodeH - 20;
       const clampedDy = Math.min(dy, maxDy);
-      newY = this.drag.startNodeY + clampedDy;
+      offsetY = clampedDy;
       newH = this.drag.startNodeH - clampedDy;
     }
 
-    this.state.updateNodeLayout(node.id, {
-      mode: "absolute",
-      x: this.snap(newX),
-      y: this.snap(newY),
-      w: this.snap(newW),
-      h: this.snap(newH),
-    });
+    if (startPos.layoutMode === "absolute" && node.layout.mode === "absolute") {
+      this.state.updateNodeLayout(node.id, {
+        mode: "absolute",
+        x: this.snap(this.drag.startNodeX + offsetX),
+        y: this.snap(this.drag.startNodeY + offsetY),
+        w: this.snap(newW),
+        h: this.snap(newH),
+      });
+    } else if (startPos.layoutMode === "anchored" && node.layout.mode === "anchored" && startPos.sizeDelta && startPos.anchoredPos) {
+      // For anchored layout, update sizeDelta and possibly anchoredPos
+      const anchoredLayout = node.layout as AnchoredLayout;
+      const deltaW = newW - this.drag.startNodeW;
+      const deltaH = newH - this.drag.startNodeH;
+
+      this.state.updateNodeLayout(node.id, {
+        ...anchoredLayout,
+        anchoredPos: [
+          this.snap(startPos.anchoredPos[0] + offsetX),
+          this.snap(startPos.anchoredPos[1] + offsetY),
+        ],
+        sizeDelta: [
+          this.snap(startPos.sizeDelta[0] + deltaW),
+          this.snap(startPos.sizeDelta[1] + deltaH),
+        ],
+      });
+    }
   }
 
   private updateHover(x: number, y: number): void {

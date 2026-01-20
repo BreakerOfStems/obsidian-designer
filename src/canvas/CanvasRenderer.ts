@@ -1,4 +1,4 @@
-import { UINode, DesignTokens, resolveToken } from "../types/ui-schema";
+import { UINode, DesignTokens, resolveToken, AnchoredLayout, anchoredToAbsolute } from "../types/ui-schema";
 import { EditorState, ViewportState } from "../state/EditorState";
 
 export interface RenderContext {
@@ -8,6 +8,8 @@ export interface RenderContext {
   selectedIds: Set<string>;
   hoveredId: string | null;
   devicePixelRatio: number;
+  parentWidth: number;
+  parentHeight: number;
 }
 
 /**
@@ -97,6 +99,15 @@ export class CanvasRenderer {
     // Draw grid
     this.drawGrid(width, height, viewport);
 
+    // Get root dimensions for anchored layout calculations
+    // The root node defines the design canvas size
+    let rootWidth = 375; // default
+    let rootHeight = 667; // default
+    if (screen.root.layout.mode === "absolute") {
+      rootWidth = screen.root.layout.w;
+      rootHeight = screen.root.layout.h;
+    }
+
     // Create render context
     const renderCtx: RenderContext = {
       ctx: this.ctx,
@@ -105,6 +116,8 @@ export class CanvasRenderer {
       selectedIds: new Set(this.state.getSelectedNodeIds()),
       hoveredId: this.state.getHoveredNodeId(),
       devicePixelRatio: this.dpr,
+      parentWidth: rootWidth,
+      parentHeight: rootHeight,
     };
 
     // Render screen root and children
@@ -182,9 +195,29 @@ export class CanvasRenderer {
   }
 
   private renderNode(node: UINode, ctx: RenderContext): void {
-    if (node.layout.mode !== "absolute") return;
+    // Calculate x, y, w, h based on layout mode
+    let x: number, y: number, w: number, h: number;
 
-    const { x, y, w, h } = node.layout;
+    if (node.layout.mode === "absolute") {
+      x = node.layout.x;
+      y = node.layout.y;
+      w = node.layout.w;
+      h = node.layout.h;
+    } else if (node.layout.mode === "anchored") {
+      const rect = anchoredToAbsolute(
+        node.layout as AnchoredLayout,
+        ctx.parentWidth,
+        ctx.parentHeight
+      );
+      x = rect.x;
+      y = rect.y;
+      w = rect.w;
+      h = rect.h;
+    } else {
+      // Auto layout not supported for rendering yet
+      return;
+    }
+
     const isSelected = ctx.selectedIds.has(node.id);
     const isHovered = ctx.hoveredId === node.id;
 
@@ -230,6 +263,11 @@ export class CanvasRenderer {
       ctx.ctx.fillText(node.name || node.type, x + 4, y + 4);
     }
 
+    // Draw anchor indicators for anchored layout when selected
+    if (isSelected && node.layout.mode === "anchored") {
+      this.drawAnchorIndicators(ctx.ctx, node.layout as AnchoredLayout, ctx.parentWidth, ctx.parentHeight, ctx.viewport.zoom);
+    }
+
     // Draw selection handles
     if (isSelected) {
       this.drawSelectionHandles(ctx.ctx, x, y, w, h, ctx.viewport.zoom);
@@ -239,14 +277,67 @@ export class CanvasRenderer {
     if (node.children) {
       for (const child of node.children) {
         ctx.ctx.save();
-        // Children are positioned relative to parent for absolute layout
+        // Children are positioned relative to parent
         ctx.ctx.translate(x, y);
-        // Adjust child coordinates temporarily
-        const childLayout = { ...child.layout };
-        this.renderNode(child, ctx);
+        // Create child context with this node's dimensions as parent
+        const childCtx: RenderContext = {
+          ...ctx,
+          parentWidth: w,
+          parentHeight: h,
+        };
+        this.renderNode(child, childCtx);
         ctx.ctx.restore();
       }
     }
+  }
+
+  private drawAnchorIndicators(
+    ctx: CanvasRenderingContext2D,
+    layout: AnchoredLayout,
+    parentWidth: number,
+    parentHeight: number,
+    zoom: number
+  ): void {
+    const { anchorMin, anchorMax } = layout;
+
+    // Draw anchor lines (dashed)
+    ctx.strokeStyle = "#ff9900";
+    ctx.lineWidth = 1 / zoom;
+    ctx.setLineDash([4 / zoom, 4 / zoom]);
+
+    // Anchor min X line
+    const minX = anchorMin[0] * parentWidth;
+    ctx.beginPath();
+    ctx.moveTo(minX, 0);
+    ctx.lineTo(minX, parentHeight);
+    ctx.stroke();
+
+    // Anchor max X line (if different from min)
+    if (anchorMax[0] !== anchorMin[0]) {
+      const maxX = anchorMax[0] * parentWidth;
+      ctx.beginPath();
+      ctx.moveTo(maxX, 0);
+      ctx.lineTo(maxX, parentHeight);
+      ctx.stroke();
+    }
+
+    // Anchor min Y line
+    const minY = anchorMin[1] * parentHeight;
+    ctx.beginPath();
+    ctx.moveTo(0, minY);
+    ctx.lineTo(parentWidth, minY);
+    ctx.stroke();
+
+    // Anchor max Y line (if different from min)
+    if (anchorMax[1] !== anchorMin[1]) {
+      const maxY = anchorMax[1] * parentHeight;
+      ctx.beginPath();
+      ctx.moveTo(0, maxY);
+      ctx.lineTo(parentWidth, maxY);
+      ctx.stroke();
+    }
+
+    ctx.setLineDash([]);
   }
 
   private resolveColor(
@@ -320,8 +411,16 @@ export class CanvasRenderer {
     const worldX = (screenX - viewport.panX) / viewport.zoom;
     const worldY = (screenY - viewport.panY) / viewport.zoom;
 
+    // Get root dimensions
+    let rootWidth = 375;
+    let rootHeight = 667;
+    if (screen.root.layout.mode === "absolute") {
+      rootWidth = screen.root.layout.w;
+      rootHeight = screen.root.layout.h;
+    }
+
     // Test nodes in reverse order (top-most first)
-    return this.hitTestNode(screen.root, worldX, worldY, 0, 0);
+    return this.hitTestNode(screen.root, worldX, worldY, 0, 0, rootWidth, rootHeight);
   }
 
   private hitTestNode(
@@ -329,11 +428,32 @@ export class CanvasRenderer {
     worldX: number,
     worldY: number,
     parentX: number,
-    parentY: number
+    parentY: number,
+    parentWidth: number,
+    parentHeight: number
   ): string | null {
-    if (node.layout.mode !== "absolute") return null;
+    // Calculate node bounds based on layout mode
+    let x: number, y: number, w: number, h: number;
 
-    const { x, y, w, h } = node.layout;
+    if (node.layout.mode === "absolute") {
+      x = node.layout.x;
+      y = node.layout.y;
+      w = node.layout.w;
+      h = node.layout.h;
+    } else if (node.layout.mode === "anchored") {
+      const rect = anchoredToAbsolute(
+        node.layout as AnchoredLayout,
+        parentWidth,
+        parentHeight
+      );
+      x = rect.x;
+      y = rect.y;
+      w = rect.w;
+      h = rect.h;
+    } else {
+      return null;
+    }
+
     const nodeX = parentX + x;
     const nodeY = parentY + y;
 
@@ -345,7 +465,9 @@ export class CanvasRenderer {
           worldX,
           worldY,
           nodeX,
-          nodeY
+          nodeY,
+          w,
+          h
         );
         if (hit) return hit;
       }
@@ -370,7 +492,8 @@ export class CanvasRenderer {
     screenY: number
   ): string | null {
     const selectedNode = this.state.getSelectedNode();
-    if (!selectedNode || selectedNode.layout.mode !== "absolute") return null;
+    if (!selectedNode) return null;
+    if (selectedNode.layout.mode !== "absolute" && selectedNode.layout.mode !== "anchored") return null;
 
     const viewport = this.state.getViewport();
     const worldX = (screenX - viewport.panX) / viewport.zoom;
@@ -382,7 +505,8 @@ export class CanvasRenderer {
 
     const x = absolutePos.x;
     const y = absolutePos.y;
-    const { w, h } = selectedNode.layout;
+    const w = absolutePos.w;
+    const h = absolutePos.h;
     const handleSize = 8 / viewport.zoom;
     const tolerance = handleSize;
 

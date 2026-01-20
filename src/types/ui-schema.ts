@@ -27,7 +27,21 @@ export interface AbsoluteLayout {
   h: number;
 }
 
-export type NodeLayout = AutoLayout | AbsoluteLayout;
+// Unity RectTransform-compatible anchored layout
+// Anchors are normalized (0..1) relative to parent rect
+// Pivot is normalized (0..1) relative to this element's rect
+// AnchoredPos is offset from anchor center to pivot in pixels
+// SizeDelta is the size adjustment relative to anchor spread in pixels
+export interface AnchoredLayout {
+  mode: "anchored";
+  anchorMin: [number, number]; // [x, y] in range 0..1
+  anchorMax: [number, number]; // [x, y] in range 0..1
+  pivot: [number, number];     // [x, y] in range 0..1
+  anchoredPos: [number, number]; // [x, y] offset in pixels
+  sizeDelta: [number, number]; // [width, height] delta in pixels
+}
+
+export type NodeLayout = AutoLayout | AbsoluteLayout | AnchoredLayout;
 
 // Style properties - can reference tokens or use direct values
 export interface NodeStyle {
@@ -200,4 +214,121 @@ export function resolveToken(
   }
 
   return value;
+}
+
+// Convert anchored layout to absolute rect given parent dimensions
+export function anchoredToAbsolute(
+  anchored: AnchoredLayout,
+  parentWidth: number,
+  parentHeight: number
+): { x: number; y: number; w: number; h: number } {
+  const { anchorMin, anchorMax, pivot, anchoredPos, sizeDelta } = anchored;
+
+  // Calculate anchor positions in parent space
+  const anchorMinX = anchorMin[0] * parentWidth;
+  const anchorMinY = anchorMin[1] * parentHeight;
+  const anchorMaxX = anchorMax[0] * parentWidth;
+  const anchorMaxY = anchorMax[1] * parentHeight;
+
+  // Anchor spread (distance between min and max anchors)
+  const anchorSpreadX = anchorMaxX - anchorMinX;
+  const anchorSpreadY = anchorMaxY - anchorMinY;
+
+  // Final size = anchor spread + sizeDelta
+  const w = anchorSpreadX + sizeDelta[0];
+  const h = anchorSpreadY + sizeDelta[1];
+
+  // Anchor center position
+  const anchorCenterX = (anchorMinX + anchorMaxX) / 2;
+  const anchorCenterY = (anchorMinY + anchorMaxY) / 2;
+
+  // Pivot offset from element's top-left corner
+  const pivotOffsetX = pivot[0] * w;
+  const pivotOffsetY = pivot[1] * h;
+
+  // Position: anchor center + anchored position - pivot offset
+  const x = anchorCenterX + anchoredPos[0] - pivotOffsetX;
+  const y = anchorCenterY + anchoredPos[1] - pivotOffsetY;
+
+  return { x, y, w, h };
+}
+
+// Convert absolute rect to anchored layout given parent dimensions
+export function absoluteToAnchored(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  parentWidth: number,
+  parentHeight: number,
+  pivot: [number, number] = [0.5, 0.5],
+  stretchX: boolean = false,
+  stretchY: boolean = false
+): AnchoredLayout {
+  // Default: anchor to center (0.5, 0.5) with no stretch
+  let anchorMin: [number, number];
+  let anchorMax: [number, number];
+  let anchoredPos: [number, number];
+  let sizeDelta: [number, number];
+
+  if (stretchX && stretchY) {
+    // Full stretch: anchors at corners, sizeDelta defines padding
+    anchorMin = [0, 0];
+    anchorMax = [1, 1];
+    // sizeDelta is negative (element is smaller than anchor spread by margins)
+    const leftMargin = x;
+    const rightMargin = parentWidth - (x + w);
+    const topMargin = y;
+    const bottomMargin = parentHeight - (y + h);
+    sizeDelta = [-(leftMargin + rightMargin), -(topMargin + bottomMargin)];
+    anchoredPos = [(leftMargin - rightMargin) / 2, (topMargin - bottomMargin) / 2];
+  } else if (stretchX) {
+    // Horizontal stretch only
+    anchorMin = [0, (y + h * pivot[1]) / parentHeight];
+    anchorMax = [1, (y + h * pivot[1]) / parentHeight];
+    const leftMargin = x;
+    const rightMargin = parentWidth - (x + w);
+    sizeDelta = [-(leftMargin + rightMargin), h];
+    anchoredPos = [(leftMargin - rightMargin) / 2, 0];
+  } else if (stretchY) {
+    // Vertical stretch only
+    anchorMin = [(x + w * pivot[0]) / parentWidth, 0];
+    anchorMax = [(x + w * pivot[0]) / parentWidth, 1];
+    const topMargin = y;
+    const bottomMargin = parentHeight - (y + h);
+    sizeDelta = [w, -(topMargin + bottomMargin)];
+    anchoredPos = [0, (topMargin - bottomMargin) / 2];
+  } else {
+    // No stretch: point anchor at element's pivot position
+    const anchorX = (x + w * pivot[0]) / parentWidth;
+    const anchorY = (y + h * pivot[1]) / parentHeight;
+    anchorMin = [anchorX, anchorY];
+    anchorMax = [anchorX, anchorY];
+    anchoredPos = [0, 0];
+    sizeDelta = [w, h];
+  }
+
+  return {
+    mode: "anchored",
+    anchorMin,
+    anchorMax,
+    pivot,
+    anchoredPos,
+    sizeDelta,
+  };
+}
+
+// Create a default anchored layout (centered, no stretch)
+export function createDefaultAnchoredLayout(
+  w: number = 100,
+  h: number = 100
+): AnchoredLayout {
+  return {
+    mode: "anchored",
+    anchorMin: [0.5, 0.5],
+    anchorMax: [0.5, 0.5],
+    pivot: [0.5, 0.5],
+    anchoredPos: [0, 0],
+    sizeDelta: [w, h],
+  };
 }
