@@ -189,7 +189,7 @@ export class PropertiesView extends ItemView {
         selectedNode.layout.mode,
         [
           { value: "absolute", label: "Absolute" },
-          { value: "anchored", label: "Anchored (Unity)" },
+          { value: "anchored", label: "Anchored" },
         ],
         (val) => {
           if (val === "absolute" && selectedNode.layout.mode !== "absolute") {

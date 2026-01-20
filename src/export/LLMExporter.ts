@@ -96,7 +96,7 @@ export interface LLMMeta {
  */
 export interface LLMLayout {
   mode: "absolute" | "anchored" | "auto";
-  // Anchored layout (Unity RectTransform compatible)
+  // Anchored layout
   anchorMin?: [number, number];
   anchorMax?: [number, number];
   pivot?: [number, number];

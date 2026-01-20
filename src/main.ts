@@ -378,11 +378,12 @@ export default class UIDesignerPlugin extends Plugin {
             type: "Container",
             name: "Root",
             layout: {
-              mode: "absolute",
-              x: 0,
-              y: 0,
-              w: 375,
-              h: 667,
+              mode: "anchored",
+              anchorMin: [0, 0],
+              anchorMax: [1, 1],
+              pivot: [0.5, 0.5],
+              anchoredPos: [0, 0],
+              sizeDelta: [0, 0],
             },
             style: {
               background: "color.background",
