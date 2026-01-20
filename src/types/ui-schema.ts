@@ -134,6 +134,93 @@ export interface A11yMeta {
   live?: "off" | "polite" | "assertive";  // Live region announcement
 }
 
+// Event types for behavior definition
+export type BehaviorEventType =
+  | "click"
+  | "doubleClick"
+  | "longPress"
+  | "hover"
+  | "focus"
+  | "blur"
+  | "change"
+  | "submit"
+  | "keyPress"
+  | "swipe"
+  | "drag"
+  | "drop"
+  | "custom";
+
+// Event definition for behavior
+export interface BehaviorEvent {
+  type: BehaviorEventType;
+  name: string;            // Handler name (e.g., "onSubmitForm", "onNavigateBack")
+  payloadHint?: string;    // Optional hint about expected payload (e.g., "{ userId: string }")
+}
+
+// Behavior describes runtime interactions and events
+export interface NodeBehavior {
+  // Events this node can emit
+  events?: BehaviorEvent[];
+  // Whether interactions are currently enabled
+  enabled?: boolean;
+  // Interaction mode for containers
+  interactionMode?: "none" | "passthrough" | "block";
+  // Animation triggers
+  animations?: {
+    trigger: "onMount" | "onUnmount" | "onStateChange" | "onHover" | "onPress";
+    animation: string;  // Animation name or reference
+  }[];
+}
+
+// Validation rule types
+export type BindValidationType =
+  | "required"
+  | "minLength"
+  | "maxLength"
+  | "min"
+  | "max"
+  | "pattern"
+  | "email"
+  | "url"
+  | "custom";
+
+// Validation rule definition
+export interface BindValidation {
+  type: BindValidationType;
+  value?: string | number;  // The validation parameter (e.g., pattern string, min value)
+  message?: string;         // Error message to display when validation fails
+}
+
+// Format options for displaying bound data
+export type BindFormat =
+  | "text"
+  | "number"
+  | "currency"
+  | "percentage"
+  | "date"
+  | "datetime"
+  | "time"
+  | "boolean"
+  | "custom";
+
+// Binding describes data contract and field mapping
+export interface NodeBinding {
+  // Data path to bind to (e.g., "user.profile.name", "items[0].title")
+  path?: string;
+  // Display format for the bound value
+  format?: BindFormat;
+  // Custom format string (e.g., "MMM DD, YYYY" for dates, "$0,0.00" for currency)
+  formatString?: string;
+  // Validation rules for input bindings
+  validation?: BindValidation[];
+  // Default value when path resolves to undefined
+  defaultValue?: string | number | boolean;
+  // Whether binding is read-only (display) or two-way (input)
+  direction?: "read" | "write" | "two-way";
+  // Transform function name for custom value processing
+  transform?: string;
+}
+
 // Meta describes intent and behavior, not appearance
 export interface NodeMeta {
   // Semantic role of the element
@@ -181,6 +268,8 @@ export interface UINode {
   style?: NodeStyle;
   content?: NodeContent;
   meta?: NodeMeta;
+  behavior?: NodeBehavior; // Runtime interactions and events
+  bind?: NodeBinding;      // Data binding and validation
   children?: UINode[];
 }
 
@@ -414,6 +503,133 @@ export const ELEMENT_ROLES: { value: ElementRole; label: string }[] = [
   { value: "icon", label: "Icon" },
   { value: "custom", label: "Custom" },
 ];
+
+// All available behavior event types for UI selection
+export const BEHAVIOR_EVENT_TYPES: { value: BehaviorEventType; label: string }[] = [
+  { value: "click", label: "Click" },
+  { value: "doubleClick", label: "Double Click" },
+  { value: "longPress", label: "Long Press" },
+  { value: "hover", label: "Hover" },
+  { value: "focus", label: "Focus" },
+  { value: "blur", label: "Blur" },
+  { value: "change", label: "Change" },
+  { value: "submit", label: "Submit" },
+  { value: "keyPress", label: "Key Press" },
+  { value: "swipe", label: "Swipe" },
+  { value: "drag", label: "Drag" },
+  { value: "drop", label: "Drop" },
+  { value: "custom", label: "Custom" },
+];
+
+// All available bind formats for UI selection
+export const BIND_FORMATS: { value: BindFormat; label: string }[] = [
+  { value: "text", label: "Text" },
+  { value: "number", label: "Number" },
+  { value: "currency", label: "Currency" },
+  { value: "percentage", label: "Percentage" },
+  { value: "date", label: "Date" },
+  { value: "datetime", label: "Date & Time" },
+  { value: "time", label: "Time" },
+  { value: "boolean", label: "Boolean" },
+  { value: "custom", label: "Custom" },
+];
+
+// All available validation types for UI selection
+export const BIND_VALIDATION_TYPES: { value: BindValidationType; label: string }[] = [
+  { value: "required", label: "Required" },
+  { value: "minLength", label: "Min Length" },
+  { value: "maxLength", label: "Max Length" },
+  { value: "min", label: "Min Value" },
+  { value: "max", label: "Max Value" },
+  { value: "pattern", label: "Pattern (Regex)" },
+  { value: "email", label: "Email" },
+  { value: "url", label: "URL" },
+  { value: "custom", label: "Custom" },
+];
+
+// Default behavior templates per node type
+export interface BehaviorTemplate {
+  events: BehaviorEvent[];
+  enabled: boolean;
+  interactionMode?: "none" | "passthrough" | "block";
+}
+
+export const DEFAULT_BEHAVIOR_TEMPLATES: Partial<Record<NodeType, BehaviorTemplate>> = {
+  Button: {
+    events: [{ type: "click", name: "onClick" }],
+    enabled: true,
+  },
+  Input: {
+    events: [
+      { type: "change", name: "onChange", payloadHint: "{ value: string }" },
+      { type: "focus", name: "onFocus" },
+      { type: "blur", name: "onBlur" },
+    ],
+    enabled: true,
+  },
+  Card: {
+    events: [{ type: "click", name: "onClick" }],
+    enabled: true,
+  },
+  ListItem: {
+    events: [{ type: "click", name: "onSelect" }],
+    enabled: true,
+  },
+  Modal: {
+    events: [{ type: "click", name: "onBackdropClick" }],
+    enabled: true,
+    interactionMode: "block",
+  },
+  Image: {
+    events: [{ type: "click", name: "onClick" }],
+    enabled: true,
+  },
+};
+
+// Default binding templates per node type
+export interface BindingTemplate {
+  format: BindFormat;
+  direction: "read" | "write" | "two-way";
+  validation?: BindValidation[];
+}
+
+export const DEFAULT_BINDING_TEMPLATES: Partial<Record<NodeType, BindingTemplate>> = {
+  Text: {
+    format: "text",
+    direction: "read",
+  },
+  Input: {
+    format: "text",
+    direction: "two-way",
+    validation: [],
+  },
+  Image: {
+    format: "text",
+    direction: "read",
+  },
+};
+
+// Get default behavior for a node type
+export function getDefaultBehavior(type: NodeType): NodeBehavior | undefined {
+  const template = DEFAULT_BEHAVIOR_TEMPLATES[type];
+  if (!template) return undefined;
+  return {
+    events: template.events.map(e => ({ ...e })),
+    enabled: template.enabled,
+    interactionMode: template.interactionMode,
+  };
+}
+
+// Get default binding for a node type
+export function getDefaultBinding(type: NodeType): NodeBinding | undefined {
+  const template = DEFAULT_BINDING_TEMPLATES[type];
+  if (!template) return undefined;
+  return {
+    format: template.format,
+    direction: template.direction,
+    validation: template.validation ? [...template.validation] : undefined,
+  };
+}
 
 // Helper to create empty document
 export function createEmptyDocument(name?: string): UIDocument {

@@ -698,3 +698,90 @@
 .ui-token-modal-primary:hover {
   background: var(--interactive-accent-hover) !important;
 }
+
+/* Properties panel - List fields for events and validation */
+.ui-properties-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.ui-properties-list-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.ui-properties-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ui-properties-list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.ui-properties-list-select {
+  flex: 0 0 100px;
+  font-size: 11px;
+}
+
+.ui-properties-list-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.ui-properties-list-input-small {
+  flex: 0 0 80px;
+  font-size: 11px;
+}
+
+.ui-properties-list-remove {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.ui-properties-list-remove:hover {
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  border-color: var(--background-modifier-error);
+}
+
+.ui-properties-list-add {
+  align-self: flex-start;
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--background-secondary);
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ui-properties-list-add:hover {
+  background: var(--background-secondary-alt);
+  color: var(--text-normal);
+  border-style: solid;
+}
