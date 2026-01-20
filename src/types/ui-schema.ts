@@ -43,6 +43,32 @@ export interface AnchoredLayout {
 
 export type NodeLayout = AutoLayout | AbsoluteLayout | AnchoredLayout;
 
+// Responsive constraints for layout intent under resizing
+export interface LayoutPin {
+  left?: boolean;
+  right?: boolean;
+  top?: boolean;
+  bottom?: boolean;
+  centerX?: boolean;
+  centerY?: boolean;
+}
+
+export interface LayoutConstraints {
+  // Edge pinning for responsive positioning
+  pin?: LayoutPin;
+  // Size constraints in pixels
+  minW?: number;
+  maxW?: number;
+  minH?: number;
+  maxH?: number;
+  // Aspect ratio lock (e.g., 1.777 for 16:9, null to disable)
+  aspectLock?: number | null;
+  // Whether to respect device safe areas (notches, etc.)
+  safeArea?: boolean;
+  // How the element scales when container resizes
+  scaleMode?: "fixed" | "fit" | "fill";
+}
+
 // Style properties - can reference tokens or use direct values
 export interface NodeStyle {
   background?: string;
@@ -99,6 +125,7 @@ export interface UINode {
   type: NodeType;
   name?: string; // Human-readable name for the tree view
   layout: NodeLayout;
+  constraints?: LayoutConstraints; // Optional responsive constraints
   style?: NodeStyle;
   content?: NodeContent;
   meta?: NodeMeta;
