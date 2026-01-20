@@ -24,6 +24,9 @@ import {
   getDefaultBehavior,
   getDefaultBinding,
   A11yMeta,
+  ScreenContract,
+  SCALE_POLICIES,
+  createDefaultScreenContract,
 } from "../types/ui-schema";
 import { EditorState, getEditorStateManager } from "../state/EditorState";
 
@@ -64,10 +67,14 @@ export class PropertiesView extends ItemView {
     // Store handlers for cleanup
     this.stateEventHandlers.set("selection-changed", refreshHandler);
     this.stateEventHandlers.set("node-updated", refreshHandler);
+    this.stateEventHandlers.set("screen-contract-changed", refreshHandler);
+    this.stateEventHandlers.set("screen-changed", refreshHandler);
 
     // Subscribe
     state.on("selection-changed", refreshHandler);
     state.on("node-updated", refreshHandler);
+    state.on("screen-contract-changed", refreshHandler);
+    state.on("screen-changed", refreshHandler);
 
     this.refresh();
   }
@@ -148,12 +155,18 @@ export class PropertiesView extends ItemView {
     }
 
     const selectedNode = state.getSelectedNode();
+    const currentScreen = state.getCurrentScreen();
 
     if (!selectedNode) {
-      this.contentContainer.createSpan({
-        text: "No node selected",
-        cls: "ui-properties-empty",
-      });
+      // Show screen contract when no node is selected
+      if (currentScreen) {
+        this.createScreenContractSection(state, currentScreen.id);
+      } else {
+        this.contentContainer.createSpan({
+          text: "No screen available",
+          cls: "ui-properties-empty",
+        });
+      }
       return;
     }
 
@@ -1351,6 +1364,128 @@ export class PropertiesView extends ItemView {
     addBtn.addEventListener("click", () => {
       const newValidation = [...validation, { type: "required" as BindValidationType }];
       onChange(newValidation);
+    });
+  }
+
+  /**
+   * Create the screen contract section for editing screen-level layout metadata
+   */
+  private createScreenContractSection(state: EditorState, screenId: string): void {
+    if (!this.contentContainer) return;
+
+    const contract = state.getScreenContract(screenId);
+
+    // Screen info header
+    const screen = state.getCurrentScreen();
+    if (screen) {
+      this.createSection("Screen", this.contentContainer, (section) => {
+        this.createReadOnlyField(section, "Name", screen.name);
+        this.createReadOnlyField(section, "ID", screen.id);
+        if (screen.description) {
+          this.createReadOnlyField(section, "Description", screen.description);
+        }
+      });
+    }
+
+    // Screen Contract section
+    this.createSection("Screen Contract", this.contentContainer, (section) => {
+      // Reference Size subsection
+      const refSizeRow = section.createDiv({ cls: "ui-properties-subsection" });
+      refSizeRow.createSpan({ text: "Reference Size", cls: "ui-properties-subsection-title" });
+
+      this.createNumberField(
+        refSizeRow,
+        "Width",
+        contract.referenceSize.w,
+        (val) => {
+          state.updateScreenContract(screenId, {
+            referenceSize: { w: val, h: contract.referenceSize.h },
+          });
+        }
+      );
+
+      this.createNumberField(
+        refSizeRow,
+        "Height",
+        contract.referenceSize.h,
+        (val) => {
+          state.updateScreenContract(screenId, {
+            referenceSize: { w: contract.referenceSize.w, h: val },
+          });
+        }
+      );
+
+      // Target Aspect Range subsection
+      const aspectRow = section.createDiv({ cls: "ui-properties-subsection" });
+      aspectRow.createSpan({ text: "Target Aspect Range", cls: "ui-properties-subsection-title" });
+
+      this.createNumberField(
+        aspectRow,
+        "Min",
+        contract.targetAspectRange.min,
+        (val) => {
+          state.updateScreenContract(screenId, {
+            targetAspectRange: { min: val, max: contract.targetAspectRange.max },
+          });
+        }
+      );
+
+      this.createNumberField(
+        aspectRow,
+        "Max",
+        contract.targetAspectRange.max,
+        (val) => {
+          state.updateScreenContract(screenId, {
+            targetAspectRange: { min: contract.targetAspectRange.min, max: val },
+          });
+        }
+      );
+
+      // Scale Policy
+      this.createSelectField(
+        section,
+        "Scale Policy",
+        contract.scalePolicy,
+        SCALE_POLICIES.map(p => ({ value: p.value, label: p.label })),
+        (val) => {
+          state.updateScreenContract(screenId, {
+            scalePolicy: val as ScreenContract["scalePolicy"],
+          });
+        }
+      );
+
+      // Safe Area toggle
+      this.createSelectField(
+        section,
+        "Safe Area",
+        contract.safeArea ? "true" : "false",
+        [
+          { value: "true", label: "Yes" },
+          { value: "false", label: "No" },
+        ],
+        (val) => {
+          state.updateScreenContract(screenId, {
+            safeArea: val === "true",
+          });
+        }
+      );
+
+      // Reset to defaults button
+      this.createButtonField(
+        section,
+        "Reset to defaults",
+        () => {
+          const defaultContract = createDefaultScreenContract();
+          state.updateScreenContract(screenId, defaultContract);
+        }
+      );
+    });
+
+    // Hint text about what this section is for
+    const hint = this.contentContainer.createDiv({ cls: "ui-properties-hint" });
+    hint.createSpan({
+      text: "The screen contract defines how this design scales across different devices and screen sizes.",
+      cls: "ui-properties-hint-text",
     });
   }
 }
