@@ -766,11 +766,12 @@ export class CanvasInteraction {
 
     const node = createNode(type, {
       layout: {
-        mode: "absolute",
-        x: Math.round(centerX - 50),
-        y: Math.round(centerY - 25),
-        w: type === "Button" ? 120 : 200,
-        h: type === "Button" ? 40 : 100,
+        mode: "anchored",
+        anchorMin: [0.5, 0.5],
+        anchorMax: [0.5, 0.5],
+        pivot: [0.5, 0.5],
+        anchoredPos: [0, 0],
+        sizeDelta: [type === "Button" ? 120 : 200, type === "Button" ? 40 : 100],
       },
     });
 

@@ -27,7 +27,7 @@ export interface AbsoluteLayout {
   h: number;
 }
 
-// Unity RectTransform-compatible anchored layout
+// Anchored layout
 // Anchors are normalized (0..1) relative to parent rect
 // Pivot is normalized (0..1) relative to this element's rect
 // AnchoredPos is offset from anchor center to pivot in pixels
@@ -756,11 +756,12 @@ export function createNode(
     type,
     name: type,
     layout: {
-      mode: "absolute",
-      x: 100,
-      y: 100,
-      w: type === "Button" ? 120 : type === "Text" ? 200 : 200,
-      h: type === "Button" ? 40 : type === "Text" ? 24 : 100,
+      mode: "anchored",
+      anchorMin: [0.5, 0.5],
+      anchorMax: [0.5, 0.5],
+      pivot: [0.5, 0.5],
+      anchoredPos: [0, 0],
+      sizeDelta: [type === "Button" ? 120 : type === "Text" ? 200 : 200, type === "Button" ? 40 : type === "Text" ? 24 : 100],
     },
     style: {
       background: type === "Button" ? "color.primary" : "color.surface",
