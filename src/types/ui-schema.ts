@@ -336,7 +336,8 @@ export interface Screen {
 // The complete UI Document
 export interface UIDocument {
   $schema?: string;
-  version?: string;
+  schemaVersion: string; // Document schema version for migrations (e.g., "1.0", "1.1")
+  version?: string; // User-defined document version (legacy, kept for backwards compatibility)
   name?: string;
   description?: string;
   tokens: DesignTokens;
@@ -668,10 +669,13 @@ export function getDefaultBinding(type: NodeType): NodeBinding | undefined {
   };
 }
 
+// Current schema version for documents
+export const DOCUMENT_SCHEMA_VERSION = "1.1";
+
 // Helper to create empty document
 export function createEmptyDocument(name?: string): UIDocument {
   return {
-    version: "1.0",
+    schemaVersion: DOCUMENT_SCHEMA_VERSION,
     name: name || "Untitled",
     tokens: {
       // Color tokens

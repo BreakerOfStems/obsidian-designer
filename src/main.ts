@@ -1,10 +1,16 @@
-import { Plugin, WorkspaceLeaf } from "obsidian";
+import { Plugin, WorkspaceLeaf, Notice } from "obsidian";
 import { UIEditorView, UI_EDITOR_VIEW_TYPE } from "./views/UIEditorView";
 import { NodeTreeView, NODE_TREE_VIEW_TYPE } from "./views/NodeTreeView";
 import { PropertiesView, PROPERTIES_VIEW_TYPE } from "./views/PropertiesView";
 import { TokenBrowserView, TOKEN_BROWSER_VIEW_TYPE } from "./views/TokenBrowserView";
 import { getEditorStateManager, resetEditorStateManager } from "./state/EditorState";
 import { UIDocument } from "./types/ui-schema";
+import {
+  migrateDocument,
+  needsMigration,
+  getDocumentVersion,
+  CURRENT_SCHEMA_VERSION,
+} from "./migrations";
 
 export default class UIDesignerPlugin extends Plugin {
   async onload(): Promise<void> {
@@ -190,6 +196,63 @@ export default class UIDesignerPlugin extends Plugin {
       },
     });
 
+    // Schema upgrade command
+    this.addCommand({
+      id: "upgrade-schema",
+      name: "Upgrade UI design schema",
+      checkCallback: (checking) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView) return false;
+
+        const state = uiView.getEditorState();
+        const doc = state.getDocument();
+        if (!doc) return false;
+
+        // Command is available if document needs migration
+        const docNeedsMigration = needsMigration(doc);
+
+        if (checking) {
+          return docNeedsMigration;
+        }
+
+        if (docNeedsMigration) {
+          this.upgradeCurrentDocument(uiView);
+        } else {
+          new Notice(
+            `Document is already at schema version ${CURRENT_SCHEMA_VERSION}`,
+            3000
+          );
+        }
+        return true;
+      },
+    });
+
+    // Show schema version command
+    this.addCommand({
+      id: "show-schema-version",
+      name: "Show UI design schema version",
+      checkCallback: (checking) => {
+        const uiView = this.getActiveUIEditorView();
+        if (!uiView) return false;
+
+        const state = uiView.getEditorState();
+        const doc = state.getDocument();
+        if (!doc) return false;
+
+        if (checking) {
+          return true;
+        }
+
+        const version = getDocumentVersion(doc);
+        const needsUpgrade = needsMigration(doc);
+        const message = needsUpgrade
+          ? `Schema version: ${version} (upgrade available to ${CURRENT_SCHEMA_VERSION})`
+          : `Schema version: ${version} (current)`;
+        new Notice(message, 5000);
+        return true;
+      },
+    });
+
     // When layout is ready, restore side panels if they were open
     this.app.workspace.onLayoutReady(() => {
       this.registerEvent(
@@ -242,7 +305,7 @@ export default class UIDesignerPlugin extends Plugin {
     const path = folder ? `${folder}/${filename}` : filename;
 
     const emptyDoc: UIDocument = {
-      version: "1.0",
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       name: "Untitled Design",
       tokens: {
         // Color tokens
@@ -357,5 +420,47 @@ export default class UIDesignerPlugin extends Plugin {
   private getActiveUIEditorView(): UIEditorView | null {
     const activeView = this.app.workspace.getActiveViewOfType(UIEditorView);
     return activeView;
+  }
+
+  /**
+   * Upgrade the current document's schema to the latest version
+   */
+  private upgradeCurrentDocument(uiView: UIEditorView): void {
+    const state = uiView.getEditorState();
+    const doc = state.getDocument();
+
+    if (!doc) {
+      new Notice("No document loaded", 3000);
+      return;
+    }
+
+    const originalVersion = getDocumentVersion(doc);
+    const result = migrateDocument(doc);
+
+    if (result.success) {
+      // Load the migrated document
+      state.loadDocument(result.document, uiView.file!);
+
+      // Show success message
+      if (result.migrationsApplied.length > 0) {
+        new Notice(
+          `Schema upgraded from v${originalVersion} to v${result.finalVersion}`,
+          5000
+        );
+        console.log("Schema migrations applied:", result.migrationsApplied);
+      } else {
+        new Notice(
+          `Document is already at schema version ${result.finalVersion}`,
+          3000
+        );
+      }
+    } else {
+      // Show error message
+      new Notice(
+        `Schema upgrade failed. See console for details.`,
+        5000
+      );
+      console.error("Schema migration errors:", result.errors);
+    }
   }
 }
