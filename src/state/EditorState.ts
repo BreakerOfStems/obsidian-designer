@@ -4,6 +4,8 @@ import {
   UINode,
   Screen,
   createEmptyDocument,
+  AnchoredLayout,
+  anchoredToAbsolute,
 } from "../types/ui-schema";
 import { HistoryManager } from "./HistoryManager";
 
@@ -314,28 +316,59 @@ export class EditorState {
   }
 
   /**
-   * Get the absolute position of a node (accounting for all parent offsets)
+   * Get the absolute position and size of a node (accounting for all parent offsets)
+   * Supports both absolute and anchored layout modes
    */
-  getAbsolutePosition(nodeId: string): { x: number; y: number } | null {
+  getAbsolutePosition(nodeId: string): { x: number; y: number; w: number; h: number } | null {
     const screen = this.getCurrentScreen();
     if (!screen) return null;
 
-    return this.getAbsolutePositionRecursive(nodeId, screen.root, 0, 0);
+    // Get root dimensions for anchored layout calculations
+    let rootWidth = 375;
+    let rootHeight = 667;
+    if (screen.root.layout.mode === "absolute") {
+      rootWidth = screen.root.layout.w;
+      rootHeight = screen.root.layout.h;
+    }
+
+    return this.getAbsolutePositionRecursive(nodeId, screen.root, 0, 0, rootWidth, rootHeight);
   }
 
   private getAbsolutePositionRecursive(
     nodeId: string,
     node: UINode,
     parentX: number,
-    parentY: number
-  ): { x: number; y: number } | null {
-    if (node.layout.mode !== "absolute") return null;
+    parentY: number,
+    parentWidth: number,
+    parentHeight: number
+  ): { x: number; y: number; w: number; h: number } | null {
+    // Calculate node bounds based on layout mode
+    let x: number, y: number, w: number, h: number;
 
-    const absoluteX = parentX + node.layout.x;
-    const absoluteY = parentY + node.layout.y;
+    if (node.layout.mode === "absolute") {
+      x = node.layout.x;
+      y = node.layout.y;
+      w = node.layout.w;
+      h = node.layout.h;
+    } else if (node.layout.mode === "anchored") {
+      const rect = anchoredToAbsolute(
+        node.layout as AnchoredLayout,
+        parentWidth,
+        parentHeight
+      );
+      x = rect.x;
+      y = rect.y;
+      w = rect.w;
+      h = rect.h;
+    } else {
+      return null;
+    }
+
+    const absoluteX = parentX + x;
+    const absoluteY = parentY + y;
 
     if (node.id === nodeId) {
-      return { x: absoluteX, y: absoluteY };
+      return { x: absoluteX, y: absoluteY, w, h };
     }
 
     if (node.children) {
@@ -344,7 +377,9 @@ export class EditorState {
           nodeId,
           child,
           absoluteX,
-          absoluteY
+          absoluteY,
+          w,
+          h
         );
         if (result) return result;
       }
@@ -434,12 +469,22 @@ export class EditorState {
     const screen = this.getCurrentScreen();
     if (!screen) return null;
 
+    // Get root dimensions for anchored layout calculations
+    let rootWidth = 375;
+    let rootHeight = 667;
+    if (screen.root.layout.mode === "absolute") {
+      rootWidth = screen.root.layout.w;
+      rootHeight = screen.root.layout.h;
+    }
+
     return this.findContainerAtPositionRecursive(
       worldX,
       worldY,
       screen.root,
       0,
       0,
+      rootWidth,
+      rootHeight,
       excludeIds
     );
   }
@@ -450,12 +495,34 @@ export class EditorState {
     node: UINode,
     parentX: number,
     parentY: number,
+    parentWidth: number,
+    parentHeight: number,
     excludeIds: string[]
   ): string | null {
-    if (node.layout.mode !== "absolute") return null;
+    // Calculate node bounds based on layout mode
+    let x: number, y: number, w: number, h: number;
 
-    const nodeX = parentX + node.layout.x;
-    const nodeY = parentY + node.layout.y;
+    if (node.layout.mode === "absolute") {
+      x = node.layout.x;
+      y = node.layout.y;
+      w = node.layout.w;
+      h = node.layout.h;
+    } else if (node.layout.mode === "anchored") {
+      const rect = anchoredToAbsolute(
+        node.layout as AnchoredLayout,
+        parentWidth,
+        parentHeight
+      );
+      x = rect.x;
+      y = rect.y;
+      w = rect.w;
+      h = rect.h;
+    } else {
+      return null;
+    }
+
+    const nodeX = parentX + x;
+    const nodeY = parentY + y;
 
     // Skip excluded nodes
     if (excludeIds.includes(node.id)) {
@@ -474,6 +541,8 @@ export class EditorState {
             child,
             nodeX,
             nodeY,
+            w,
+            h,
             excludeIds
           );
           if (result) return result;
@@ -485,9 +554,9 @@ export class EditorState {
     if (
       node.type === "Container" &&
       worldX >= nodeX &&
-      worldX <= nodeX + node.layout.w &&
+      worldX <= nodeX + w &&
       worldY >= nodeY &&
-      worldY <= nodeY + node.layout.h
+      worldY <= nodeY + h
     ) {
       return node.id;
     }

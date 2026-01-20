@@ -1,4 +1,4 @@
-import { UINode, AbsoluteLayout } from "../types/ui-schema";
+import { UINode, AbsoluteLayout, AnchoredLayout, anchoredToAbsolute } from "../types/ui-schema";
 import { EditorState } from "../state/EditorState";
 
 /**
@@ -282,24 +282,37 @@ export class ClipboardService {
   /**
    * Get the bounding box of a single node (including children)
    */
-  private getNodeBounds(node: UINode, offsetX = 0, offsetY = 0): BoundingBox {
-    if (node.layout.mode !== "absolute") {
+  private getNodeBounds(node: UINode, offsetX = 0, offsetY = 0, parentWidth = 375, parentHeight = 667): BoundingBox {
+    let x: number, y: number, w: number, h: number;
+
+    if (node.layout.mode === "absolute") {
+      const layout = node.layout as AbsoluteLayout;
+      x = layout.x;
+      y = layout.y;
+      w = layout.w;
+      h = layout.h;
+    } else if (node.layout.mode === "anchored") {
+      const rect = anchoredToAbsolute(node.layout as AnchoredLayout, parentWidth, parentHeight);
+      x = rect.x;
+      y = rect.y;
+      w = rect.w;
+      h = rect.h;
+    } else {
       return { minX: offsetX, minY: offsetY, maxX: offsetX, maxY: offsetY };
     }
 
-    const layout = node.layout as AbsoluteLayout;
-    const nodeX = offsetX + layout.x;
-    const nodeY = offsetY + layout.y;
+    const nodeX = offsetX + x;
+    const nodeY = offsetY + y;
 
     let minX = nodeX;
     let minY = nodeY;
-    let maxX = nodeX + layout.w;
-    let maxY = nodeY + layout.h;
+    let maxX = nodeX + w;
+    let maxY = nodeY + h;
 
     // Include children in bounding box
     if (node.children) {
       for (const child of node.children) {
-        const childBounds = this.getNodeBounds(child, nodeX, nodeY);
+        const childBounds = this.getNodeBounds(child, nodeX, nodeY, w, h);
         minX = Math.min(minX, childBounds.minX);
         minY = Math.min(minY, childBounds.minY);
         maxX = Math.max(maxX, childBounds.maxX);
@@ -318,8 +331,14 @@ export class ClipboardService {
       const layout = node.layout as AbsoluteLayout;
       layout.x += deltaX;
       layout.y += deltaY;
+    } else if (node.layout.mode === "anchored") {
+      const layout = node.layout as AnchoredLayout;
+      layout.anchoredPos = [
+        layout.anchoredPos[0] + deltaX,
+        layout.anchoredPos[1] + deltaY,
+      ];
     }
-    // Note: Children with absolute layout are relative to parent, so we don't translate them
+    // Note: Children with absolute/anchored layout are relative to parent, so we don't translate them
   }
 
   /**

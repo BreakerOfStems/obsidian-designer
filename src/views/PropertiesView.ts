@@ -1,5 +1,5 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
-import { UINode, NodeStyle, NodeMeta, NodeContent, AbsoluteLayout } from "../types/ui-schema";
+import { UINode, NodeStyle, NodeMeta, NodeContent, AbsoluteLayout, AnchoredLayout } from "../types/ui-schema";
 import { EditorState, getEditorStateManager } from "../state/EditorState";
 
 export const PROPERTIES_VIEW_TYPE = "ui-properties-view";
@@ -143,9 +143,42 @@ export class PropertiesView extends ItemView {
     });
 
     // Layout section
-    if (selectedNode.layout.mode === "absolute") {
-      const absLayout = selectedNode.layout as AbsoluteLayout;
-      this.createSection("Layout", this.contentContainer, (section) => {
+    this.createSection("Layout", this.contentContainer, (section) => {
+      // Layout mode selector
+      this.createSelectField(
+        section,
+        "Mode",
+        selectedNode.layout.mode,
+        [
+          { value: "absolute", label: "Absolute" },
+          { value: "anchored", label: "Anchored (Unity)" },
+        ],
+        (val) => {
+          if (val === "absolute" && selectedNode.layout.mode !== "absolute") {
+            // Convert to absolute layout
+            state.updateNodeLayout(selectedNode.id, {
+              mode: "absolute",
+              x: 100,
+              y: 100,
+              w: 100,
+              h: 100,
+            });
+          } else if (val === "anchored" && selectedNode.layout.mode !== "anchored") {
+            // Convert to anchored layout
+            state.updateNodeLayout(selectedNode.id, {
+              mode: "anchored",
+              anchorMin: [0.5, 0.5],
+              anchorMax: [0.5, 0.5],
+              pivot: [0.5, 0.5],
+              anchoredPos: [0, 0],
+              sizeDelta: [100, 100],
+            });
+          }
+        }
+      );
+
+      if (selectedNode.layout.mode === "absolute") {
+        const absLayout = selectedNode.layout as AbsoluteLayout;
         this.createNumberField(section, "X", absLayout.x, (val) => {
           state.updateNodeLayout(selectedNode.id, { ...absLayout, x: val });
         });
@@ -161,8 +194,63 @@ export class PropertiesView extends ItemView {
         this.createNumberField(section, "Height", absLayout.h, (val) => {
           state.updateNodeLayout(selectedNode.id, { ...absLayout, h: val });
         });
-      });
-    }
+      } else if (selectedNode.layout.mode === "anchored") {
+        const anchoredLayout = selectedNode.layout as AnchoredLayout;
+
+        // Anchor Min
+        this.createVector2Field(
+          section,
+          "Anchor Min",
+          anchoredLayout.anchorMin,
+          (val) => {
+            state.updateNodeLayout(selectedNode.id, { ...anchoredLayout, anchorMin: val });
+          },
+          { min: 0, max: 1, step: 0.01 }
+        );
+
+        // Anchor Max
+        this.createVector2Field(
+          section,
+          "Anchor Max",
+          anchoredLayout.anchorMax,
+          (val) => {
+            state.updateNodeLayout(selectedNode.id, { ...anchoredLayout, anchorMax: val });
+          },
+          { min: 0, max: 1, step: 0.01 }
+        );
+
+        // Pivot
+        this.createVector2Field(
+          section,
+          "Pivot",
+          anchoredLayout.pivot,
+          (val) => {
+            state.updateNodeLayout(selectedNode.id, { ...anchoredLayout, pivot: val });
+          },
+          { min: 0, max: 1, step: 0.01 }
+        );
+
+        // Anchored Position
+        this.createVector2Field(
+          section,
+          "Anchored Pos",
+          anchoredLayout.anchoredPos,
+          (val) => {
+            state.updateNodeLayout(selectedNode.id, { ...anchoredLayout, anchoredPos: val });
+          }
+        );
+
+        // Size Delta
+        this.createVector2Field(
+          section,
+          "Size Delta",
+          anchoredLayout.sizeDelta,
+          (val) => {
+            state.updateNodeLayout(selectedNode.id, { ...anchoredLayout, sizeDelta: val });
+          }
+        );
+      }
+    });
 
     // Style section
     this.createSection("Style", this.contentContainer, (section) => {
@@ -464,5 +552,82 @@ export class PropertiesView extends ItemView {
     const row = parent.createDiv({ cls: "ui-properties-row" });
     row.createSpan({ text: label, cls: "ui-properties-label" });
     row.createSpan({ text: value, cls: "ui-properties-value-readonly" });
+  }
+
+  private createSelectField(
+    parent: HTMLElement,
+    label: string,
+    value: string,
+    options: { value: string; label: string }[],
+    onChange: (value: string) => void
+  ): void {
+    const row = parent.createDiv({ cls: "ui-properties-row" });
+    row.createSpan({ text: label, cls: "ui-properties-label" });
+
+    const select = row.createEl("select", {
+      cls: "ui-properties-select",
+    });
+
+    for (const option of options) {
+      const optEl = select.createEl("option", {
+        value: option.value,
+        text: option.label,
+      });
+      if (option.value === value) {
+        optEl.selected = true;
+      }
+    }
+
+    select.addEventListener("change", () => {
+      onChange(select.value);
+    });
+  }
+
+  private createVector2Field(
+    parent: HTMLElement,
+    label: string,
+    value: [number, number],
+    onChange: (value: [number, number]) => void,
+    options?: { min?: number; max?: number; step?: number }
+  ): void {
+    const row = parent.createDiv({ cls: "ui-properties-row" });
+    row.createSpan({ text: label, cls: "ui-properties-label" });
+
+    const inputGroup = row.createDiv({ cls: "ui-properties-vector2-group" });
+
+    const inputX = inputGroup.createEl("input", {
+      type: "number",
+      value: String(value[0]),
+      cls: "ui-properties-input ui-properties-input-vector2",
+      attr: {
+        placeholder: "X",
+        ...(options?.min !== undefined && { min: String(options.min) }),
+        ...(options?.max !== undefined && { max: String(options.max) }),
+        ...(options?.step !== undefined && { step: String(options.step) }),
+      },
+    });
+
+    const inputY = inputGroup.createEl("input", {
+      type: "number",
+      value: String(value[1]),
+      cls: "ui-properties-input ui-properties-input-vector2",
+      attr: {
+        placeholder: "Y",
+        ...(options?.min !== undefined && { min: String(options.min) }),
+        ...(options?.max !== undefined && { max: String(options.max) }),
+        ...(options?.step !== undefined && { step: String(options.step) }),
+      },
+    });
+
+    const handleChange = () => {
+      const x = parseFloat(inputX.value);
+      const y = parseFloat(inputY.value);
+      if (!isNaN(x) && !isNaN(y)) {
+        onChange([x, y]);
+      }
+    };
+
+    inputX.addEventListener("change", handleChange);
+    inputY.addEventListener("change", handleChange);
   }
 }
