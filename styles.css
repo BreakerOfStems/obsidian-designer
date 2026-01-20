@@ -785,3 +785,56 @@
   color: var(--text-normal);
   border-style: solid;
 }
+
+/* Properties panel - button field */
+.ui-properties-row-button {
+  justify-content: flex-start;
+  margin-top: 4px;
+}
+
+.ui-properties-button {
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ui-properties-button:hover {
+  background: var(--background-secondary-alt);
+  color: var(--text-normal);
+}
+
+/* Properties panel - subsections (for grouped fields like reference size) */
+.ui-properties-subsection {
+  margin-bottom: 12px;
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.ui-properties-subsection-title {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+/* Properties panel - hint text */
+.ui-properties-hint {
+  padding: 12px;
+  margin-top: 8px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.ui-properties-hint-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}

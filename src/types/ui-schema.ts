@@ -288,11 +288,48 @@ export interface ComponentDefinition {
   };
 }
 
+// Screen contract - describes how to interpret layout across devices
+export interface ScreenContract {
+  // Reference design size in pixels
+  referenceSize: {
+    w: number;
+    h: number;
+  };
+  // Target aspect ratio range (min and max as width/height ratios)
+  targetAspectRange: {
+    min: number;
+    max: number;
+  };
+  // How the screen scales when viewport differs from reference size
+  scalePolicy: "matchWidth" | "matchHeight" | "match" | "fixed";
+  // Whether to respect device safe areas (notches, home indicators, etc.)
+  safeArea: boolean;
+}
+
+// Scale policy options for UI selection
+export const SCALE_POLICIES: { value: ScreenContract["scalePolicy"]; label: string; description: string }[] = [
+  { value: "matchWidth", label: "Match Width", description: "Scale uniformly to match reference width" },
+  { value: "matchHeight", label: "Match Height", description: "Scale uniformly to match reference height" },
+  { value: "match", label: "Match (Best Fit)", description: "Scale to fit within bounds (may letterbox)" },
+  { value: "fixed", label: "Fixed", description: "No scaling, use exact pixel sizes" },
+];
+
+// Default screen contract values
+export function createDefaultScreenContract(): ScreenContract {
+  return {
+    referenceSize: { w: 375, h: 667 },
+    targetAspectRange: { min: 0.4, max: 0.7 }, // Portrait phones (9:16 to 10:16)
+    scalePolicy: "matchWidth",
+    safeArea: true,
+  };
+}
+
 // Screen - a full page/view layout
 export interface Screen {
   id: string;
   name: string;
   description?: string;
+  contract?: ScreenContract; // Screen layout contract for runtime interpretation
   root: UINode;
 }
 

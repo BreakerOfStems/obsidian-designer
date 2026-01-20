@@ -61,6 +61,12 @@
       "id": "login",
       "name": "Login Screen",
       "description": "User authentication screen with full token usage",
+      "contract": {
+        "referenceSize": { "w": 375, "h": 667 },
+        "targetAspectRange": { "min": 0.4, "max": 0.7 },
+        "scalePolicy": "matchWidth",
+        "safeArea": true
+      },
       "root": {
         "id": "root",
         "type": "Container",
@@ -404,6 +410,12 @@
       "id": "responsive_demo",
       "name": "Responsive Layout Demo",
       "description": "Demonstrates responsive constraints with pinned header and flexible content",
+      "contract": {
+        "referenceSize": { "w": 375, "h": 667 },
+        "targetAspectRange": { "min": 0.45, "max": 0.75 },
+        "scalePolicy": "match",
+        "safeArea": true
+      },
       "root": {
         "id": "demo_root",
         "type": "Container",

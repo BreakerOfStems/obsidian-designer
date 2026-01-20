@@ -3,7 +3,9 @@ import {
   UIDocument,
   UINode,
   Screen,
+  ScreenContract,
   createEmptyDocument,
+  createDefaultScreenContract,
   AnchoredLayout,
   anchoredToAbsolute,
 } from "../types/ui-schema";
@@ -319,6 +321,42 @@ export class EditorState {
     this.markDirty();
     this.historyManager.commitChange(this.data.document, description);
     this.emit("node-updated", nodeId, { bind: node.bind });
+  }
+
+  // Screen contract management
+  updateScreenContract(screenId: string, contract: Partial<ScreenContract>, description: string = "Update screen contract"): void {
+    if (!this.data.document) return;
+
+    const screen = this.data.document.screens[screenId];
+    if (!screen) return;
+
+    // Initialize with defaults if no contract exists
+    const currentContract = screen.contract || createDefaultScreenContract();
+    screen.contract = {
+      ...currentContract,
+      ...contract,
+      // Handle nested objects properly
+      referenceSize: contract.referenceSize
+        ? { ...currentContract.referenceSize, ...contract.referenceSize }
+        : currentContract.referenceSize,
+      targetAspectRange: contract.targetAspectRange
+        ? { ...currentContract.targetAspectRange, ...contract.targetAspectRange }
+        : currentContract.targetAspectRange,
+    };
+
+    this.markDirty();
+    this.historyManager.commitChange(this.data.document, description);
+    this.emit("screen-contract-changed", screenId, screen.contract);
+  }
+
+  getScreenContract(screenId?: string): ScreenContract {
+    const targetScreenId = screenId || this.data.currentScreenId;
+    if (!this.data.document || !targetScreenId) {
+      return createDefaultScreenContract();
+    }
+
+    const screen = this.data.document.screens[targetScreenId];
+    return screen?.contract || createDefaultScreenContract();
   }
 
   // Token management
