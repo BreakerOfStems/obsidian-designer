@@ -1,4 +1,4 @@
-import { UINode, DesignTokens, resolveToken, AnchoredLayout, anchoredToAbsolute } from "../types/ui-schema";
+import { UINode, DesignTokens, resolveToken, resolveTokenAsNumber, resolveTokenAsString, AnchoredLayout, anchoredToAbsolute } from "../types/ui-schema";
 import { EditorState, ViewportState } from "../state/EditorState";
 
 export interface RenderContext {
@@ -221,10 +221,35 @@ export class CanvasRenderer {
     const isSelected = ctx.selectedIds.has(node.id);
     const isHovered = ctx.hoveredId === node.id;
 
-    // Resolve styles
+    // Resolve styles with full token support
     const bgColor = this.resolveColor(node.style?.background, ctx.tokens);
     const textColor = this.resolveColor(node.style?.textColor, ctx.tokens);
-    const borderRadius = (node.style?.borderRadius as number) || 0;
+    const borderColor = this.resolveColor(node.style?.borderColor, ctx.tokens);
+    const borderRadius = resolveTokenAsNumber(node.style?.borderRadius, ctx.tokens, 0) || 0;
+    const borderWidth = resolveTokenAsNumber(node.style?.borderWidth, ctx.tokens, 0) || 0;
+    const shadow = resolveTokenAsString(node.style?.shadow, ctx.tokens);
+
+    // Resolve typography tokens
+    const fontSize = resolveTokenAsNumber(node.style?.fontSize, ctx.tokens, 14) || 14;
+    const fontFamily = resolveTokenAsString(node.style?.fontFamily, ctx.tokens, "Inter, sans-serif") || "Inter, sans-serif";
+    const fontWeight = resolveTokenAsNumber(node.style?.fontWeight, ctx.tokens, 400) || 400;
+
+    // Draw shadow if specified
+    if (shadow && shadow !== "none") {
+      ctx.ctx.save();
+      ctx.ctx.shadowColor = "rgba(0, 0, 0, 0.1)";
+      // Parse shadow string for offset (simplified parsing)
+      const shadowMatch = shadow.match(/(-?\d+)px\s+(-?\d+)px\s+(-?\d+)px/);
+      if (shadowMatch) {
+        ctx.ctx.shadowOffsetX = parseFloat(shadowMatch[1]);
+        ctx.ctx.shadowOffsetY = parseFloat(shadowMatch[2]);
+        ctx.ctx.shadowBlur = parseFloat(shadowMatch[3]);
+      } else {
+        ctx.ctx.shadowOffsetX = 0;
+        ctx.ctx.shadowOffsetY = 4;
+        ctx.ctx.shadowBlur = 6;
+      }
+    }
 
     // Draw background
     if (bgColor) {
@@ -233,22 +258,35 @@ export class CanvasRenderer {
       ctx.ctx.fill();
     }
 
-    // Draw border for containers or when selected/hovered
-    if (node.type === "Container" || isSelected || isHovered) {
-      ctx.ctx.strokeStyle = isSelected
-        ? "#2E6BE6"
-        : isHovered
-        ? "#5a8dee"
-        : "#555";
-      ctx.ctx.lineWidth = isSelected ? 2 / ctx.viewport.zoom : 1 / ctx.viewport.zoom;
+    // Restore after shadow
+    if (shadow && shadow !== "none") {
+      ctx.ctx.restore();
+    }
+
+    // Draw border if specified or for containers/selection
+    const shouldDrawBorder = borderWidth > 0 || node.type === "Container" || isSelected || isHovered;
+    if (shouldDrawBorder) {
+      if (isSelected) {
+        ctx.ctx.strokeStyle = "#2E6BE6";
+        ctx.ctx.lineWidth = 2 / ctx.viewport.zoom;
+      } else if (isHovered) {
+        ctx.ctx.strokeStyle = "#5a8dee";
+        ctx.ctx.lineWidth = 1 / ctx.viewport.zoom;
+      } else if (borderWidth > 0 && borderColor) {
+        ctx.ctx.strokeStyle = borderColor;
+        ctx.ctx.lineWidth = borderWidth;
+      } else {
+        ctx.ctx.strokeStyle = "#555";
+        ctx.ctx.lineWidth = 1 / ctx.viewport.zoom;
+      }
       this.roundRect(ctx.ctx, x, y, w, h, borderRadius);
       ctx.ctx.stroke();
     }
 
-    // Draw text content
+    // Draw text content with full typography support
     if (node.content?.text) {
       ctx.ctx.fillStyle = textColor || "#333";
-      ctx.ctx.font = `14px Inter, sans-serif`;
+      ctx.ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
       ctx.ctx.textAlign = "center";
       ctx.ctx.textBaseline = "middle";
       ctx.ctx.fillText(node.content.text, x + w / 2, y + h / 2);

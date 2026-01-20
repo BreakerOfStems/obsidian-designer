@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "name": "Login Screen",
-  "description": "Example login screen design with responsive constraints",
+  "description": "Example login screen design with responsive constraints and design tokens",
   "tokens": {
     "color.primary": "#2E6BE6",
     "color.secondary": "#6B7280",
@@ -10,20 +10,57 @@
     "color.text": "#1F2937",
     "color.textMuted": "#6B7280",
     "color.error": "#EF4444",
-    "font.body": "Inter, sans-serif",
+    "color.success": "#10B981",
+    "color.warning": "#F59E0B",
+
+    "space.xs": 4,
     "space.sm": 8,
     "space.md": 16,
     "space.lg": 24,
     "space.xl": 32,
+    "space.2xl": 48,
+
+    "radius.none": 0,
     "radius.sm": 4,
-    "radius.md": 8
+    "radius.md": 8,
+    "radius.lg": 12,
+    "radius.xl": 16,
+    "radius.full": 9999,
+
+    "type.font.body": "Inter, system-ui, sans-serif",
+    "type.font.heading": "Inter, system-ui, sans-serif",
+    "type.font.mono": "JetBrains Mono, Consolas, monospace",
+
+    "type.size.xs": 12,
+    "type.size.sm": 14,
+    "type.size.md": 16,
+    "type.size.lg": 18,
+    "type.size.xl": 20,
+    "type.size.2xl": 24,
+    "type.size.3xl": 30,
+    "type.size.4xl": 36,
+
+    "type.weight.normal": 400,
+    "type.weight.medium": 500,
+    "type.weight.semibold": 600,
+    "type.weight.bold": 700,
+
+    "type.lineHeight.tight": 1.25,
+    "type.lineHeight.normal": 1.5,
+    "type.lineHeight.relaxed": 1.75,
+
+    "elevation.none": "none",
+    "elevation.sm": "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+    "elevation.md": "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)",
+    "elevation.lg": "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)",
+    "elevation.xl": "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)"
   },
   "components": {},
   "screens": {
     "login": {
       "id": "login",
       "name": "Login Screen",
-      "description": "User authentication screen",
+      "description": "User authentication screen with full token usage",
       "root": {
         "id": "root",
         "type": "Container",
@@ -40,7 +77,8 @@
           "safeArea": true
         },
         "style": {
-          "background": "color.background"
+          "background": "color.background",
+          "padding": "space.lg"
         },
         "meta": {
           "purpose": "Main container for login screen",
@@ -63,7 +101,11 @@
               "scaleMode": "fixed"
             },
             "style": {
-              "textColor": "color.text"
+              "textColor": "color.text",
+              "fontSize": "type.size.3xl",
+              "fontFamily": "type.font.heading",
+              "fontWeight": "type.weight.bold",
+              "lineHeight": "type.lineHeight.tight"
             },
             "content": {
               "text": "Welcome Back"
@@ -73,13 +115,41 @@
             }
           },
           {
+            "id": "subtitle",
+            "type": "Text",
+            "name": "Subtitle",
+            "layout": {
+              "mode": "absolute",
+              "x": 50,
+              "y": 145,
+              "w": 275,
+              "h": 24
+            },
+            "constraints": {
+              "pin": { "left": true, "right": true }
+            },
+            "style": {
+              "textColor": "color.textMuted",
+              "fontSize": "type.size.md",
+              "fontFamily": "type.font.body",
+              "fontWeight": "type.weight.normal",
+              "lineHeight": "type.lineHeight.normal"
+            },
+            "content": {
+              "text": "Sign in to your account to continue"
+            },
+            "meta": {
+              "purpose": "Supporting text under title"
+            }
+          },
+          {
             "id": "email_input",
             "type": "Input",
             "name": "Email Input",
             "layout": {
               "mode": "absolute",
               "x": 50,
-              "y": 180,
+              "y": 200,
               "w": 275,
               "h": 44
             },
@@ -90,7 +160,10 @@
             },
             "style": {
               "background": "color.surface",
-              "borderRadius": 8
+              "borderRadius": "radius.md",
+              "fontSize": "type.size.md",
+              "fontFamily": "type.font.body",
+              "padding": "space.md"
             },
             "content": {
               "placeholder": "Enter your email"
@@ -108,7 +181,7 @@
             "layout": {
               "mode": "absolute",
               "x": 50,
-              "y": 240,
+              "y": 260,
               "w": 275,
               "h": 44
             },
@@ -119,7 +192,10 @@
             },
             "style": {
               "background": "color.surface",
-              "borderRadius": 8
+              "borderRadius": "radius.md",
+              "fontSize": "type.size.md",
+              "fontFamily": "type.font.body",
+              "padding": "space.md"
             },
             "content": {
               "placeholder": "Enter your password"
@@ -137,7 +213,7 @@
             "layout": {
               "mode": "absolute",
               "x": 50,
-              "y": 320,
+              "y": 340,
               "w": 275,
               "h": 48
             },
@@ -149,7 +225,12 @@
             "style": {
               "background": "color.primary",
               "textColor": "#FFFFFF",
-              "borderRadius": 8
+              "borderRadius": "radius.md",
+              "fontSize": "type.size.md",
+              "fontFamily": "type.font.body",
+              "fontWeight": "type.weight.semibold",
+              "shadow": "elevation.md",
+              "padding": "space.md"
             },
             "content": {
               "text": "Sign In"
@@ -169,7 +250,7 @@
             "layout": {
               "mode": "absolute",
               "x": 100,
-              "y": 385,
+              "y": 405,
               "w": 175,
               "h": 32
             },
@@ -179,7 +260,10 @@
             },
             "style": {
               "background": "transparent",
-              "textColor": "color.primary"
+              "textColor": "color.primary",
+              "fontSize": "type.size.sm",
+              "fontFamily": "type.font.body",
+              "fontWeight": "type.weight.medium"
             },
             "content": {
               "text": "Forgot Password?"
@@ -187,6 +271,90 @@
             "meta": {
               "purpose": "Navigation to password reset flow",
               "behavior": "Opens password reset modal or navigates to reset page"
+            }
+          },
+          {
+            "id": "divider_container",
+            "type": "Container",
+            "name": "Divider",
+            "layout": {
+              "mode": "absolute",
+              "x": 50,
+              "y": 460,
+              "w": 275,
+              "h": 24
+            },
+            "style": {
+              "borderColor": "color.surface",
+              "borderWidth": 1
+            },
+            "content": {
+              "text": "or continue with"
+            },
+            "meta": {
+              "purpose": "Visual separator between login methods"
+            }
+          },
+          {
+            "id": "social_login_google",
+            "type": "Button",
+            "name": "Google Login",
+            "layout": {
+              "mode": "absolute",
+              "x": 50,
+              "y": 500,
+              "w": 275,
+              "h": 44
+            },
+            "constraints": {
+              "pin": { "left": true, "right": true }
+            },
+            "style": {
+              "background": "color.surface",
+              "textColor": "color.text",
+              "borderRadius": "radius.md",
+              "borderColor": "color.secondary",
+              "borderWidth": 1,
+              "fontSize": "type.size.sm",
+              "fontFamily": "type.font.body",
+              "fontWeight": "type.weight.medium",
+              "padding": "space.sm"
+            },
+            "content": {
+              "text": "Continue with Google",
+              "icon": "google"
+            },
+            "meta": {
+              "purpose": "Social login with Google OAuth",
+              "behavior": "Opens Google OAuth popup"
+            }
+          },
+          {
+            "id": "signup_link",
+            "type": "Text",
+            "name": "Signup Link",
+            "layout": {
+              "mode": "absolute",
+              "x": 50,
+              "y": 570,
+              "w": 275,
+              "h": 24
+            },
+            "constraints": {
+              "pin": { "left": true, "right": true, "bottom": true }
+            },
+            "style": {
+              "textColor": "color.textMuted",
+              "fontSize": "type.size.sm",
+              "fontFamily": "type.font.body",
+              "fontWeight": "type.weight.normal",
+              "lineHeight": "type.lineHeight.normal"
+            },
+            "content": {
+              "text": "Don't have an account? Sign up"
+            },
+            "meta": {
+              "purpose": "Link to registration flow"
             }
           }
         ]
@@ -237,7 +405,12 @@
             },
             "style": {
               "background": "color.primary",
-              "textColor": "#FFFFFF"
+              "textColor": "#FFFFFF",
+              "fontSize": "type.size.lg",
+              "fontFamily": "type.font.heading",
+              "fontWeight": "type.weight.semibold",
+              "padding": "space.md",
+              "shadow": "elevation.sm"
             },
             "content": {
               "text": "App Header"
@@ -263,7 +436,8 @@
               "scaleMode": "fill"
             },
             "style": {
-              "background": "color.surface"
+              "background": "color.surface",
+              "padding": "space.md"
             },
             "meta": {
               "purpose": "Flexible content area that expands to fill available space",
@@ -290,7 +464,9 @@
                 },
                 "style": {
                   "background": "#FFFFFF",
-                  "borderRadius": 12
+                  "borderRadius": "radius.lg",
+                  "shadow": "elevation.lg",
+                  "padding": "space.lg"
                 },
                 "content": {
                   "text": "Feature Card with Aspect Lock"
@@ -298,6 +474,56 @@
                 "meta": {
                   "purpose": "Content card with locked aspect ratio",
                   "behavior": "Maintains 16:9.33 aspect ratio during resize"
+                }
+              },
+              {
+                "id": "card_title",
+                "type": "Text",
+                "name": "Card Title",
+                "layout": {
+                  "mode": "absolute",
+                  "x": 32,
+                  "y": 32,
+                  "w": 311,
+                  "h": 28
+                },
+                "style": {
+                  "textColor": "color.text",
+                  "fontSize": "type.size.xl",
+                  "fontFamily": "type.font.heading",
+                  "fontWeight": "type.weight.bold",
+                  "lineHeight": "type.lineHeight.tight"
+                },
+                "content": {
+                  "text": "Welcome to the App"
+                },
+                "meta": {
+                  "purpose": "Card headline"
+                }
+              },
+              {
+                "id": "card_description",
+                "type": "Text",
+                "name": "Card Description",
+                "layout": {
+                  "mode": "absolute",
+                  "x": 32,
+                  "y": 68,
+                  "w": 311,
+                  "h": 48
+                },
+                "style": {
+                  "textColor": "color.textMuted",
+                  "fontSize": "type.size.md",
+                  "fontFamily": "type.font.body",
+                  "fontWeight": "type.weight.normal",
+                  "lineHeight": "type.lineHeight.relaxed"
+                },
+                "content": {
+                  "text": "This card demonstrates the use of spacing and typography tokens for consistent design."
+                },
+                "meta": {
+                  "purpose": "Card body text"
                 }
               },
               {
@@ -318,7 +544,7 @@
                 },
                 "style": {
                   "background": "color.secondary",
-                  "borderRadius": 8
+                  "borderRadius": "radius.md"
                 },
                 "content": {
                   "text": "16:9 Image"
@@ -351,7 +577,11 @@
             "style": {
               "background": "#FFFFFF",
               "borderColor": "color.surface",
-              "borderWidth": 1
+              "borderWidth": 1,
+              "fontSize": "type.size.sm",
+              "fontFamily": "type.font.body",
+              "padding": "space.md",
+              "shadow": "elevation.sm"
             },
             "content": {
               "text": "Footer"

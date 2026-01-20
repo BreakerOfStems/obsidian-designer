@@ -70,17 +70,25 @@ export interface LayoutConstraints {
 }
 
 // Style properties - can reference tokens or use direct values
+// String values can be token references (e.g., "color.primary", "space.md", "radius.sm")
 export interface NodeStyle {
   background?: string;
   textColor?: string;
   borderColor?: string;
-  borderWidth?: number;
-  borderRadius?: number;
+  borderWidth?: string | number; // Can be token ref (e.g., "space.xs") or number
+  borderRadius?: string | number; // Can be token ref (e.g., "radius.md") or number
   opacity?: number;
-  fontSize?: string | number;
-  fontFamily?: string;
-  fontWeight?: string | number;
-  shadow?: string;
+  fontSize?: string | number; // Can be token ref (e.g., "type.size.md") or number
+  fontFamily?: string; // Can be token ref (e.g., "type.font.body") or string
+  fontWeight?: string | number; // Can be token ref (e.g., "type.weight.bold") or value
+  lineHeight?: string | number; // Can be token ref (e.g., "type.lineHeight.normal") or number
+  shadow?: string; // Can be token ref (e.g., "elevation.md") or CSS shadow string
+  // Padding/margin as token references or numbers
+  padding?: string | number;
+  paddingTop?: string | number;
+  paddingRight?: string | number;
+  paddingBottom?: string | number;
+  paddingLeft?: string | number;
 }
 
 // Content for UI elements
@@ -172,22 +180,66 @@ export function createEmptyDocument(name?: string): UIDocument {
     version: "1.0",
     name: name || "Untitled",
     tokens: {
+      // Color tokens
       "color.primary": "#2E6BE6",
       "color.secondary": "#6B7280",
       "color.background": "#FFFFFF",
       "color.surface": "#F3F4F6",
       "color.text": "#1F2937",
       "color.textMuted": "#6B7280",
-      "font.body": "Inter, sans-serif",
-      "font.heading": "Inter, sans-serif",
+      "color.error": "#EF4444",
+      "color.success": "#10B981",
+      "color.warning": "#F59E0B",
+
+      // Spacing tokens (in pixels)
       "space.xs": 4,
       "space.sm": 8,
       "space.md": 16,
       "space.lg": 24,
       "space.xl": 32,
+      "space.2xl": 48,
+      "space.3xl": 64,
+
+      // Border radius tokens (in pixels)
+      "radius.none": 0,
       "radius.sm": 4,
       "radius.md": 8,
       "radius.lg": 12,
+      "radius.xl": 16,
+      "radius.full": 9999,
+
+      // Typography - Font families
+      "type.font.body": "Inter, system-ui, sans-serif",
+      "type.font.heading": "Inter, system-ui, sans-serif",
+      "type.font.mono": "JetBrains Mono, Consolas, monospace",
+
+      // Typography - Font sizes (in pixels)
+      "type.size.xs": 12,
+      "type.size.sm": 14,
+      "type.size.md": 16,
+      "type.size.lg": 18,
+      "type.size.xl": 20,
+      "type.size.2xl": 24,
+      "type.size.3xl": 30,
+      "type.size.4xl": 36,
+
+      // Typography - Font weights
+      "type.weight.normal": 400,
+      "type.weight.medium": 500,
+      "type.weight.semibold": 600,
+      "type.weight.bold": 700,
+
+      // Typography - Line heights (multipliers)
+      "type.lineHeight.tight": 1.25,
+      "type.lineHeight.normal": 1.5,
+      "type.lineHeight.relaxed": 1.75,
+
+      // Elevation/shadow tokens (CSS box-shadow values)
+      "elevation.none": "none",
+      "elevation.sm": "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+      "elevation.md": "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)",
+      "elevation.lg": "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)",
+      "elevation.xl": "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
     },
     components: {},
     screens: {},
@@ -215,7 +267,11 @@ export function createNode(
     style: {
       background: type === "Button" ? "color.primary" : "color.surface",
       textColor: type === "Button" ? "#FFFFFF" : "color.text",
-      borderRadius: 4,
+      borderRadius: "radius.sm",
+      fontSize: type === "Text" ? "type.size.md" : "type.size.sm",
+      fontFamily: "type.font.body",
+      fontWeight: type === "Button" ? "type.weight.medium" : "type.weight.normal",
+      padding: type === "Button" ? "space.sm" : undefined,
     },
     content: {
       text: type === "Button" ? "Button" : type === "Text" ? "Text" : undefined,
@@ -241,6 +297,59 @@ export function resolveToken(
   }
 
   return value;
+}
+
+// Helper to resolve a token and ensure it's a number
+export function resolveTokenAsNumber(
+  value: string | number | undefined,
+  tokens: DesignTokens,
+  defaultValue?: number
+): number | undefined {
+  const resolved = resolveToken(value, tokens);
+  if (resolved === undefined) return defaultValue;
+  if (typeof resolved === "number") return resolved;
+  const parsed = parseFloat(resolved);
+  return isNaN(parsed) ? defaultValue : parsed;
+}
+
+// Helper to resolve a token and ensure it's a string
+export function resolveTokenAsString(
+  value: string | number | undefined,
+  tokens: DesignTokens,
+  defaultValue?: string
+): string | undefined {
+  const resolved = resolveToken(value, tokens);
+  if (resolved === undefined) return defaultValue;
+  return String(resolved);
+}
+
+// Get token category from a token key (e.g., "color.primary" -> "color")
+export function getTokenCategory(tokenKey: string): string {
+  const dotIndex = tokenKey.indexOf(".");
+  return dotIndex > 0 ? tokenKey.substring(0, dotIndex) : tokenKey;
+}
+
+// Get all tokens of a specific category
+export function getTokensByCategory(
+  tokens: DesignTokens,
+  category: string
+): { [key: string]: string | number } {
+  const result: { [key: string]: string | number } = {};
+  for (const key of Object.keys(tokens)) {
+    if (key.startsWith(category + ".")) {
+      result[key] = tokens[key];
+    }
+  }
+  return result;
+}
+
+// Get all token categories
+export function getTokenCategories(tokens: DesignTokens): string[] {
+  const categories = new Set<string>();
+  for (const key of Object.keys(tokens)) {
+    categories.add(getTokenCategory(key));
+  }
+  return Array.from(categories).sort();
 }
 
 // Convert anchored layout to absolute rect given parent dimensions
